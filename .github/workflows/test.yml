@@ -1,0 +1,17 @@
+name: Clip Machine Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Test GitHub Actions
+        run: |
+          echo "================================"
+          echo "CLIP MACHINE IS WORKING"
+          echo "================================"
+          echo "Android -> GitHub -> Cloud"
+          echo "================================"
