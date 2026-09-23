@@ -1,0 +1,43 @@
+name: Clip Machine - FFmpeg Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ffmpeg-test:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Check FFmpeg
+        run: |
+          echo "=============================="
+          echo "FFMPEG VERSION"
+          echo "=============================="
+          ffmpeg -version
+
+      - name: Create test video
+        run: |
+          mkdir -p output
+
+          ffmpeg \
+            -f lavfi \
+            -i "testsrc=size=1080x1920:rate=30" \
+            -t 5 \
+            -c:v libx264 \
+            -pix_fmt yuv420p \
+            output/clip-machine-test.mp4
+
+      - name: Upload test video
+        uses: actions/upload-artifact@v4
+        with:
+          name: clip-machine-test
+          path: output/clip-machine-test.mp4
