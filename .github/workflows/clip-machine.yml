@@ -1,0 +1,42 @@
+name: Clip Machine - Whisper Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  whisper-test:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        run: |
+          python3 --version
+          python3 -m pip install --upgrade pip
+
+      - name: Install faster-whisper
+        run: |
+          python3 -m pip install faster-whisper
+
+      - name: Test Whisper
+        run: |
+          python3 - <<'PY'
+          from faster_whisper import WhisperModel
+
+          print("================================")
+          print("LOADING WHISPER")
+          print("================================")
+
+          model = WhisperModel(
+              "tiny",
+              device="cpu",
+              compute_type="int8"
+          )
+
+          print("================================")
+          print("WHISPER WORKS")
+          print("================================")
+          PY
