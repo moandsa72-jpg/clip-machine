@@ -1,42 +1,173 @@
-name: Clip Machine - Whisper Test
+name: Clip Machine - Transcribe and Find Moments
 
 on:
   workflow_dispatch:
 
 jobs:
-  whisper-test:
+  analyze-video:
     runs-on: ubuntu-latest
 
     steps:
 
+      # ==========================================
+      # 1. CHECKOUT
+      # ==========================================
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Python
+
+      # ==========================================
+      # 2. INSTALL SYSTEM TOOLS
+      # ==========================================
+
+      - name: Install FFmpeg
         run: |
-          python3 --version
-          python3 -m pip install --upgrade pip
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+
+      # ==========================================
+      # 3. INSTALL PYTHON
+      # ==========================================
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+
+      # ==========================================
+      # 4. INSTALL WHISPER
+      # ==========================================
 
       - name: Install faster-whisper
         run: |
-          python3 -m pip install faster-whisper
+          python -m pip install --upgrade pip
+          pip install faster-whisper
 
-      - name: Test Whisper
+
+      # ==========================================
+      # 5. CREATE WORK DIRECTORIES
+      # ==========================================
+
+      - name: Create folders
         run: |
-          python3 - <<'PY'
-          from faster_whisper import WhisperModel
+          mkdir -p input
+          mkdir -p work
+          mkdir -p output
 
-          print("================================")
-          print("LOADING WHISPER")
-          print("================================")
 
-          model = WhisperModel(
-              "tiny",
-              device="cpu",
-              compute_type="int8"
-          )
+      # ==========================================
+      # 6. CHECK INPUT VIDEO
+      # ==========================================
 
-          print("================================")
-          print("WHISPER WORKS")
-          print("================================")
-          PY
+      - name: Check input folder
+        run: |
+          echo "Files inside input:"
+          find input -maxdepth 1 -type f -print
+
+          echo ""
+          echo "Video files:"
+          find input -maxdepth 1 -type f \
+            \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.mkv" -o -iname "*.webm" \) \
+            -print
+
+
+      # ==========================================
+      # 7. FIND FIRST VIDEO
+      # ==========================================
+
+      - name: Find source video
+        id: source
+        shell: bash
+        run: |
+          VIDEO=$(find input -maxdepth 1 -type f \
+            \( -iname "*.mp4" -o -iname "*.mov" -o -iname "*.mkv" -o -iname "*.webm" \) \
+            | head -n 1)
+
+          if [ -z "$VIDEO" ]; then
+            echo "ERROR: No video found inside input/"
+            exit 1
+          fi
+
+          echo "Found video: $VIDEO"
+
+          echo "video=$VIDEO" >> "$GITHUB_OUTPUT"
+
+
+      # ==========================================
+      # 8. VIDEO INFORMATION
+      # ==========================================
+
+      - name: Inspect source video
+        run: |
+          echo "Source video:"
+          echo "${{ steps.source.outputs.video }}"
+
+          echo ""
+          echo "FFprobe information:"
+
+          ffprobe \
+            -v error \
+            -show_entries format=duration,size \
+            -show_entries stream=codec_name,width,height,r_frame_rate \
+            -of default=noprint_wrappers=1 \
+            "${{ steps.source.outputs.video }}"
+
+
+      # ==========================================
+      # 9. TRANSCRIBE VIDEO
+      # ==========================================
+
+      - name: Transcribe video
+        run: |
+          python scripts/transcribe.py \
+            "${{ steps.source.outputs.video }}" \
+            work/transcript.json
+
+
+      # ==========================================
+      # 10. FIND INTERESTING MOMENTS
+      # ==========================================
+
+      - name: Find interesting moments
+        run: |
+          python scripts/find_moments.py \
+            work/transcript.json \
+            work/moments.json
+
+
+      # ==========================================
+      # 11. SHOW TRANSCRIPT
+      # ==========================================
+
+      - name: Show transcript
+        run: |
+          echo "========================================"
+          echo "TRANSCRIPT"
+          echo "========================================"
+
+          cat work/transcript.json
+
+          echo ""
+          echo "========================================"
+          echo "MOMENTS"
+          echo "========================================"
+
+          cat work/moments.json
+
+
+      # ==========================================
+      # 12. SAVE ANALYSIS RESULTS
+      # ==========================================
+
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v4
+        with:
+          name: clip-machine-analysis
+          path: |
+            work/transcript.json
+            work/moments.json
+          if-no-files-found: error
+          retention-days: 7
