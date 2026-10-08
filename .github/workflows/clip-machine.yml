@@ -136,7 +136,17 @@ jobs:
           python scripts/find_moments.py \
             work/transcript.json \
             work/moments.json
+            
+      # ==========================================
+      # 11. CREATE SHORT-FORM CLIPS
+      # ==========================================
 
+      - name: Create clips
+        run: |
+          python scripts/make_clips.py \
+            "${{ steps.source.outputs.video }}" \
+            work/moments.json \
+            output/clips
 
       # ==========================================
       # 11. SHOW TRANSCRIPT
