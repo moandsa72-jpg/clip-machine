@@ -141,12 +141,13 @@ jobs:
       # 11. CREATE SHORT-FORM CLIPS
       # ==========================================
 
-      - name: Create clips
+      - name: Create clips with captions
         run: |
           python scripts/make_clips.py \
             "${{ steps.source.outputs.video }}" \
             work/moments.json \
-            output/clips
+            output/clips \
+            work/transcript.json
 
       # ==========================================
       # 11. SHOW TRANSCRIPT
