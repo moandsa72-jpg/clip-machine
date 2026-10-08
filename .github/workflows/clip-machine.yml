@@ -172,11 +172,12 @@ jobs:
       # 12. SAVE ANALYSIS RESULTS
       # ==========================================
 
-      - name: Upload analysis results
+      - name: Upload clips and analysis
         uses: actions/upload-artifact@v4
         with:
-          name: clip-machine-analysis
+          name: clip-machine-results
           path: |
+            output/clips/*.mp4
             work/transcript.json
             work/moments.json
           if-no-files-found: error
