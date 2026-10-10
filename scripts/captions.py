@@ -5,6 +5,7 @@ from pathlib import Path
 
 def ass_time(seconds):
     total_cs = max(0, round(seconds * 100))
+
     hours = total_cs // 360000
     minutes = (total_cs % 360000) // 6000
     secs = (total_cs % 6000) // 100
@@ -42,6 +43,7 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
                 continue
 
             word = item.get("word", "").strip()
+
             if not word:
                 continue
 
@@ -51,23 +53,25 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
                 "end": min(word_end, clip_end) - clip_start,
             })
 
+    words.sort(key=lambda item: item["start"])
+
     if not words:
         raise ValueError(
             "No word timestamps found for this clip. "
             "Check work/transcript.json."
         )
 
-    # Group words into short caption lines.
+    # Group words into short, readable caption phrases.
     groups = []
     current = []
 
     for item in words:
         current.append(item)
 
-        if (
-            len(current) >= 4
-            or item["word"].endswith((".", "!", "?"))
-        ):
+        sentence_end = item["word"].endswith((".", "!", "?"))
+        group_full = len(current) >= 4
+
+        if sentence_end or group_full:
             groups.append(current)
             current = []
 
@@ -75,7 +79,7 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
         groups.append(current)
 
     header = """[Script Info]
-Title: Clip Machine Animated Captions
+Title: Clip Machine Improved Animated Captions
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
@@ -96,42 +100,48 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         group_start = group[0]["start"]
         group_end = max(
             group[-1]["end"],
-            group_start + 0.08
+            group_start + 0.12
         )
 
         for index, item in enumerate(group):
             word_start = item["start"]
-            word_end = max(item["end"], word_start + 0.06)
 
-            # Show the full phrase, but highlight only the current word.
+            # Keep the whole phrase visible until the next
+            # word becomes active.
+            if index + 1 < len(group):
+                next_word_start = group[index + 1]["start"]
+
+                event_end = max(
+                    next_word_start,
+                    word_start + 0.06
+                )
+            else:
+                event_end = group_end
+
+            event_end = min(event_end, group_end)
+
+            if event_end <= word_start:
+                event_end = word_start + 0.08
+
             parts = []
 
             for other_index, other in enumerate(group):
                 text = escape_text(other["word"])
 
                 if other_index == index:
-                    # Yellow current word with a subtle pop animation.
+                    # Yellow active word with a subtle pop.
                     text = (
                         r"{\c&H0000FFFF&"
                         r"\fscx112\fscy112"
                         r"\t(0,100,\fscx100\fscy100)}"
                         + text
-                        + r"{\c&H00FFFFFF&\fscx100\fscy100}"
+                        + r"{\c&H00FFFFFF&"
+                        r"\fscx100\fscy100}"
                     )
 
                 parts.append(text)
 
             phrase = " ".join(parts)
-
-            # Each event begins when its highlighted word is spoken.
-            # The phrase remains on screen for the caption group's duration.
-            event_end = min(
-                group_end,
-                max(word_end, word_start + 0.12)
-            )
-
-            if event_end <= word_start:
-                event_end = word_start + 0.08
 
             events.append(
                 "Dialogue: 0,"
@@ -150,7 +160,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         file.write("\n".join(events))
         file.write("\n")
 
-    print("ANIMATED CAPTIONS CREATED")
+    print("IMPROVED ANIMATED CAPTIONS CREATED")
     print(f"Words: {len(words)}")
     print(f"Caption groups: {len(groups)}")
     print(f"Caption events: {len(events)}")
