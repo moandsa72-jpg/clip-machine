@@ -2,6 +2,11 @@ name: Clip Machine - Transcribe and Find Moments
 
 on:
   workflow_dispatch:
+    inputs:
+      video_url:
+        description: "Paste a supported video URL"
+        required: false
+        type: string
 
 jobs:
   analyze-video:
