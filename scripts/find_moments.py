@@ -696,8 +696,8 @@ def find_moments(
             "maximum_duration":
                 MAX_DURATION,
 
-            "max_moments":
-                MAX_MOMENTS,
+         
+                
         },
 
         "moments": moments
