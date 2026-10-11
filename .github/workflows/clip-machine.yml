@@ -108,10 +108,12 @@ jobs:
 
           echo "Video source verified."
 
-      - name: Transcribe video
-        run: |
+          - name: Transcribe video
+             run: |
           set -euo pipefail
-          python scripts/transcribe.py "$VIDEO_PATH"
+          python scripts/transcribe.py \
+            "$VIDEO_PATH" \
+            work/transcript.json
 
       - name: Find promising moments
         run: |
