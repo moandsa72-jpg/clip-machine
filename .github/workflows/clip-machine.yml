@@ -85,14 +85,15 @@ jobs:
             work/source_video.mp4
           echo "VIDEO_PATH=work/source_video.mp4" >> "$GITHUB_ENV"
 
-      - name: Set local video path
-        if: steps.source.outputs.source_type == 'local'
-        env:
-          LOCAL_VIDEO: ${{ steps.source.outputs.video }}
-        run: |
-          echo "VIDEO_PATH=$LOCAL_VIDEO" >> "$GITHUB_ENV"
+            - name: Set local video path
+          if: steps.source.outputs.source_type == 'local'
+              env:
+              LOCAL_VIDEO: ${{ steps.source.outputs.video }}
+                     run: |
+                           set -euo pipefail
+                   echo "VIDEO_PATH=$LOCAL_VIDEO" >> "$GITHUB_ENV"
      
-          - name: Verify video with FFprobe
+            - name: Verify video with FFprobe
            run: |
                  set -euo pipefail
 
