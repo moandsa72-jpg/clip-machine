@@ -33,7 +33,7 @@ IDEAL_MIN_DURATION = 15
 IDEAL_MAX_DURATION = 27
 MAX_DURATION = 35
 
-MAX_MOMENTS = 12
+
 
 
 # ============================================================
@@ -582,8 +582,8 @@ def remove_overlaps(windows):
                 candidate
             )
 
-        if len(selected) >= MAX_MOMENTS:
-            break
+        
+            
 
     return sorted(
         selected,
