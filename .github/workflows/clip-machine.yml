@@ -91,29 +91,22 @@ jobs:
           LOCAL_VIDEO: ${{ steps.source.outputs.video }}
         run: |
           echo "VIDEO_PATH=$LOCAL_VIDEO" >> "$GITHUB_ENV"
+     
+          - name: Verify video with FFprobe
+           run: |
+                 set -euo pipefail
 
-      - name: Verify video with FFprobe
-        run: |
-          set -euo pipefail
+                 if [ ! -f "$VIDEO_PATH" ]; then
+              echo "Video file not found: $VIDEO_PATH"
+                     exit 1
+                         fi
 
-          if [ ! -f "$VIDEO_PATH" ]; then
-            echo "Video file not found: $VIDEO_PATH"
-            exit 1
-          fi
+                          ffprobe -v error \
+              -show_entries format=duration \
+                  -of default=noprint_wrappers=1:nokey=1 \
+                      "$VIDEO_PATH"
 
-          ffprobe -v error \
-            -show_entries format=duration \
-            -of default=noprint_wrappers=1:nokey=1 \
-            "$VIDEO_PATH"
-
-          echo "Video source verified."
-
-          - name: Transcribe video
-             run: |
-          set -euo pipefail
-          python scripts/transcribe.py \
-            "$VIDEO_PATH" \
-            work/transcript.json
+              echo "Video source verified."
 
       - name: Find promising moments
         run: |
