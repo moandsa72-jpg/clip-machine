@@ -34,7 +34,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Install Python packages
         run: |
@@ -55,8 +54,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -n "${VIDEO_URL}" ]; then
-            echo "A video URL was provided."
+          if [ -n "$VIDEO_URL" ]; then
             echo "source_type=url" >> "$GITHUB_OUTPUT"
           else
             VIDEO_FILE="$(find input -maxdepth 1 -type f \
@@ -67,7 +65,7 @@ jobs:
 
             if [ -z "$VIDEO_FILE" ]; then
               echo "No video URL or local video was provided."
-              echo "Add a video URL when running the workflow, or put a video in input/."
+              echo "Add a direct HTTPS URL or put a video in input/."
               exit 1
             fi
 
