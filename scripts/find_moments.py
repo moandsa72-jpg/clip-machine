@@ -9,31 +9,30 @@ from pathlib import Path
 # ============================================================
 #
 # This script does NOT invent dialogue.
-# It only analyzes the original transcript and identifies
+# It analyzes the original transcript and identifies
 # promising sections for short-form editing.
 #
-# The goal is to prioritize:
+# Current scoring priorities:
 # - strong hooks
 # - curiosity
-# - conflict
+# - conflict / contrast
 # - surprise
 # - useful information
-# - numbers
+# - numbers / specificity
 # - questions
 # - conversational language
 # - good short-form duration
-# - strong endings
+# - complete-thought boundaries
+# - setup -> payoff structure
 #
-# Final "viral" performance can never be guaranteed.
-#
+# Final viral performance can never be guaranteed.
+# ============================================================
 
 
 MIN_DURATION = 10
 IDEAL_MIN_DURATION = 15
 IDEAL_MAX_DURATION = 27
 MAX_DURATION = 35
-
-
 
 
 # ============================================================
@@ -195,6 +194,7 @@ def question_count(text):
 def exclamation_count(text):
     return text.count("!")
 
+
 def is_thought_end(text):
     text = clean_text(text)
 
@@ -202,6 +202,81 @@ def is_thought_end(text):
         return False
 
     return text.endswith((".", "!", "?"))
+
+
+# ============================================================
+# SETUP -> PAYOFF ANALYSIS
+# ============================================================
+
+def calculate_payoff_score(text):
+    text_lower = text.lower()
+
+    setup_markers = (
+        "but",
+        "however",
+        "the problem",
+        "the thing is",
+        "what happened",
+        "the reason",
+        "i thought",
+        "we thought",
+        "at first",
+        "in the beginning",
+        "before that",
+        "until",
+    )
+
+    payoff_markers = (
+        "so",
+        "that's why",
+        "that is why",
+        "which means",
+        "the result",
+        "as a result",
+        "because of that",
+        "turns out",
+        "it turns out",
+        "finally",
+        "in the end",
+        "what i learned",
+        "what we learned",
+        "the answer",
+        "the truth is",
+    )
+
+    setup_hits = sum(
+        1
+        for marker in setup_markers
+        if marker in text_lower
+    )
+
+    payoff_hits = sum(
+        1
+        for marker in payoff_markers
+        if marker in text_lower
+    )
+
+    score = 0
+
+    if setup_hits:
+        score += min(
+            setup_hits * 2,
+            5
+        )
+
+    if payoff_hits:
+        score += min(
+            payoff_hits * 3,
+            9
+        )
+
+    # Strongest signal:
+    # both setup and payoff appear in the same candidate.
+    if setup_hits and payoff_hits:
+        score += 6
+
+    return score
+
 
 # ============================================================
 # SCORE ONE CANDIDATE
@@ -220,6 +295,7 @@ def score_candidate(text, duration):
             "specificity_score": 0,
             "conversation_score": 0,
             "duration_score": 0,
+            "payoff_score": 0,
             "boundary_score": 0,
             "penalty": 0,
         }
@@ -232,11 +308,12 @@ def score_candidate(text, duration):
     specificity_score = 0
     conversation_score = 0
     duration_score = 0
+    payoff_score = 0
+    boundary_score = 0
 
     penalty = 0
 
     text_lower = text.lower()
-
 
     # --------------------------------------------------------
     # HOOK LANGUAGE
@@ -247,8 +324,10 @@ def score_candidate(text, duration):
         HOOK_WORDS
     )
 
-    hook_score += min(hook_hits * 2, 14)
-
+    hook_score += min(
+        hook_hits * 2,
+        14
+    )
 
     # --------------------------------------------------------
     # CURIOSITY
@@ -264,7 +343,6 @@ def score_candidate(text, duration):
         12
     )
 
-
     # --------------------------------------------------------
     # STRONG LANGUAGE
     # --------------------------------------------------------
@@ -279,7 +357,6 @@ def score_candidate(text, duration):
         9
     )
 
-
     # --------------------------------------------------------
     # QUESTIONS
     # --------------------------------------------------------
@@ -292,7 +369,6 @@ def score_candidate(text, duration):
             8
         )
 
-
     # --------------------------------------------------------
     # NUMBERS / SPECIFIC INFORMATION
     # --------------------------------------------------------
@@ -304,7 +380,6 @@ def score_candidate(text, duration):
             numbers * 3,
             9
         )
-
 
     # --------------------------------------------------------
     # INFORMATION DENSITY
@@ -321,7 +396,6 @@ def score_candidate(text, duration):
     if word_count >= 50:
         information_score += 2
 
-
     # --------------------------------------------------------
     # CONVERSATIONAL SIGNALS
     # --------------------------------------------------------
@@ -331,14 +405,15 @@ def score_candidate(text, duration):
         "your",
         "we",
         "us",
-        "I",
+        "i",
         "me",
         "they",
         "them",
     }
 
     conversation_hits = sum(
-        1 for word in words
+        1
+        for word in words
         if word in conversational_words
     )
 
@@ -347,7 +422,6 @@ def score_candidate(text, duration):
 
     if conversation_hits >= 5:
         conversation_score += 2
-
 
     # --------------------------------------------------------
     # DURATION
@@ -365,7 +439,6 @@ def score_candidate(text, duration):
     else:
         duration_score -= 2
 
-
     # --------------------------------------------------------
     # WEAK BEGINNING
     # --------------------------------------------------------
@@ -375,7 +448,6 @@ def score_candidate(text, duration):
     if first_words:
         if first_words[0] in WEAK_START_WORDS:
             penalty += 3
-
 
     # --------------------------------------------------------
     # REPETITION
@@ -391,7 +463,6 @@ def score_candidate(text, duration):
 
     elif unique_ratio < 0.50:
         penalty += 2
-
 
     # --------------------------------------------------------
     # EXCESSIVE FILLER
@@ -409,7 +480,8 @@ def score_candidate(text, duration):
     }
 
     filler_hits = sum(
-        1 for word in words
+        1
+        for word in words
         if word in filler_words
     )
 
@@ -423,21 +495,18 @@ def score_candidate(text, duration):
         elif filler_ratio > 0.08:
             penalty += 2
 
-
     # --------------------------------------------------------
     # EXCLAMATION / ENERGY
     # --------------------------------------------------------
 
     if exclamation_count(text) > 0:
-       def is_thought_end(text):
-           text = clean_text(text)
+        hook_score += 2
 
-           if not text:
-               return False
+    # --------------------------------------------------------
+    # SETUP -> PAYOFF
+    # --------------------------------------------------------
 
-           return text.endswith((".", "!", "?")) 
-           hook_score += 2
-
+    payoff_score = calculate_payoff_score(text)
 
     # --------------------------------------------------------
     # FINAL SCORE
@@ -450,6 +519,8 @@ def score_candidate(text, duration):
         + specificity_score
         + conversation_score
         + duration_score
+        + payoff_score
+        + boundary_score
         - penalty
     )
 
@@ -457,11 +528,34 @@ def score_candidate(text, duration):
         "score": round(score, 2),
         "hook_score": round(hook_score, 2),
         "curiosity_score": round(curiosity_score, 2),
-        "information_score": round(information_score, 2),
-        "specificity_score": round(specificity_score, 2),
-        "conversation_score": round(conversation_score, 2),
-        "duration_score": round(duration_score, 2),
-        "penalty": round(penalty, 2),
+        "information_score": round(
+            information_score,
+            2
+        ),
+        "specificity_score": round(
+            specificity_score,
+            2
+        ),
+        "conversation_score": round(
+            conversation_score,
+            2
+        ),
+        "duration_score": round(
+            duration_score,
+            2
+        ),
+        "payoff_score": round(
+            payoff_score,
+            2
+        ),
+        "boundary_score": round(
+            boundary_score,
+            2
+        ),
+        "penalty": round(
+            penalty,
+            2
+        ),
     }
 
 
@@ -512,12 +606,13 @@ def build_windows(segments):
                 continue
 
             thought_end = is_thought_end(
-                segments[j].get("text", "")
+                segments[j].get(
+                    "text",
+                    ""
+                )
             )
 
             # Prefer complete thoughts.
-            # If the segment ends a sentence, this is
-            # a strong candidate boundary.
             if thought_end:
 
                 scores = score_candidate(
@@ -533,8 +628,14 @@ def build_windows(segments):
                 )
 
                 windows.append({
-                    "start": round(start, 3),
-                    "end": round(end, 3),
+                    "start": round(
+                        start,
+                        3
+                    ),
+                    "end": round(
+                        end,
+                        3
+                    ),
                     "duration": round(
                         duration,
                         3
@@ -543,10 +644,8 @@ def build_windows(segments):
                     **scores
                 })
 
-            # Safety fallback:
-            # if we reach the maximum duration without
-            # a sentence ending, keep the candidate rather
-            # than losing potentially valuable content.
+            # Safety fallback if no sentence boundary
+            # is reached near the maximum duration.
             elif duration >= MAX_DURATION - 1:
 
                 scores = score_candidate(
@@ -554,11 +653,15 @@ def build_windows(segments):
                     duration
                 )
 
-                scores["boundary_score"] = 0
-
                 windows.append({
-                    "start": round(start, 3),
-                    "end": round(end, 3),
+                    "start": round(
+                        start,
+                        3
+                    ),
+                    "end": round(
+                        end,
+                        3
+                    ),
                     "duration": round(
                         duration,
                         3
@@ -612,6 +715,7 @@ def remove_overlaps(windows):
             item["score"],
             item["information_score"],
             item["curiosity_score"],
+            item["payoff_score"],
             -abs(
                 item["duration"] - 20
             )
@@ -638,9 +742,6 @@ def remove_overlaps(windows):
                 candidate
             )
 
-        
-            
-
     return sorted(
         selected,
         key=lambda item: item["start"]
@@ -666,6 +767,11 @@ def classify_moment(moment):
         and moment["information_score"] >= 4
     ):
         return "information"
+
+    if (
+        moment["payoff_score"] >= 8
+    ):
+        return "setup_payoff"
 
     if (
         moment["hook_score"] >= 10
@@ -752,8 +858,6 @@ def find_moments(
             "maximum_duration":
                 MAX_DURATION,
 
-         
-                
         },
 
         "moments": moments
@@ -840,6 +944,11 @@ def find_moments(
         print(
             f"Conversation: "
             f"{moment['conversation_score']}"
+        )
+
+        print(
+            f"Payoff: "
+            f"{moment['payoff_score']}"
         )
 
         print(
