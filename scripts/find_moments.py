@@ -213,6 +213,7 @@ def score_candidate(text, duration):
             "specificity_score": 0,
             "conversation_score": 0,
             "duration_score": 0,
+            "boundary_score": 0,
             "penalty": 0,
         }
 
@@ -421,6 +422,13 @@ def score_candidate(text, duration):
     # --------------------------------------------------------
 
     if exclamation_count(text) > 0:
+       def is_thought_end(text):
+    text = clean_text(text)
+
+    if not text:
+        return False
+
+    return text.endswith((".", "!", "?")) 
         hook_score += 2
 
 
@@ -486,19 +494,60 @@ def build_windows(segments):
                 )
             )
 
-            if duration >= MIN_DURATION:
+            if duration < MIN_DURATION:
+                continue
 
-                text = clean_text(
-                    " ".join(text_parts)
-                )
+            text = clean_text(
+                " ".join(text_parts)
+            )
 
-                if not text:
-                    continue
+            if not text:
+                continue
+
+            thought_end = is_thought_end(
+                segments[j].get("text", "")
+            )
+
+            # Prefer complete thoughts.
+            # If the segment ends a sentence, this is
+            # a strong candidate boundary.
+            if thought_end:
 
                 scores = score_candidate(
                     text,
                     duration
                 )
+
+                scores["boundary_score"] = 6
+
+                scores["score"] = round(
+                    scores["score"] + 6,
+                    2
+                )
+
+                windows.append({
+                    "start": round(start, 3),
+                    "end": round(end, 3),
+                    "duration": round(
+                        duration,
+                        3
+                    ),
+                    "text": text,
+                    **scores
+                })
+
+            # Safety fallback:
+            # if we reach the maximum duration without
+            # a sentence ending, keep the candidate rather
+            # than losing potentially valuable content.
+            elif duration >= MAX_DURATION - 1:
+
+                scores = score_candidate(
+                    text,
+                    duration
+                )
+
+                scores["boundary_score"] = 0
 
                 windows.append({
                     "start": round(start, 3),
