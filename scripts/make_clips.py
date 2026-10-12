@@ -42,7 +42,7 @@ def make_clip(video_path, start, end, output_path, transcript_path):
         "[0:v]split=2[bg][fg];"
         "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
         "crop=1080:1920,boxblur=10:5[bgblur];"
-        "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fgfit];"
+        "[fg]scale=1400:-1[fgfit];"
         "[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,"
         "setsar=1[base];"
         f"[base]subtitles='{subtitle_filter_path}'[outv]"
