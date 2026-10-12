@@ -28,10 +28,6 @@ def escape_text(text):
     )
 
 
-def centiseconds(seconds):
-    return max(1, round(seconds * 100))
-
-
 def create_ass(transcript_path, clip_start, clip_end, output_path):
     with open(transcript_path, "r", encoding="utf-8") as file:
         transcript = json.load(file)
@@ -65,7 +61,7 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
             "Check work/transcript.json."
         )
 
-    # Keep captions short and readable.
+    # Short readable caption groups.
     groups = []
     current = []
 
@@ -83,7 +79,7 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
         groups.append(current)
 
     header = """[Script Info]
-Title: Clip Machine Precise Word Captions
+Title: Clip Machine Precise Animated Captions
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
@@ -92,7 +88,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,DejaVu Sans,72,&H00FFFFFF,&H0000FFFF,&H00101010,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,2,80,80,360,1
+Style: Default,DejaVu Sans,72,&H00FFFFFF,&H0000FFFF,&H00101010,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,2,80,80,300,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -108,56 +104,50 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             group_start + 0.12
         )
 
-        # Base phrase: always white.
-        base_text = " ".join(
-            escape_text(item["word"])
-            for item in group
-        )
-
-        events.append(
-            "Dialogue: 0,"
-            + ass_time(group_start)
-            + ","
-            + ass_time(group_end)
-            + ",Default,,0,0,0,,"
-            + base_text
-        )
-
-        # Yellow active word.
         for index, item in enumerate(group):
             word_start = item["start"]
 
             if index + 1 < len(group):
                 next_word_start = group[index + 1]["start"]
-                word_end = max(
+
+                event_end = max(
                     next_word_start,
-                    item["end"]
+                    word_start + 0.06
                 )
             else:
-                word_end = group_end
+                event_end = group_end
 
-            word_end = min(word_end, group_end)
+            event_end = min(event_end, group_end)
 
-            if word_end <= word_start:
-                word_end = word_start + 0.08
+            if event_end <= word_start:
+                event_end = word_start + 0.08
 
-            word_text = escape_text(item["word"])
+            parts = []
 
-            # Yellow active word.
-            highlighted = (
-                r"{\c&H0000FFFF&"
-                r"\fscx108\fscy108"
-                r"\t(0,80,\fscx100\fscy100)}"
-                + word_text
-            )
+            for other_index, other in enumerate(group):
+                text = escape_text(other["word"])
+
+                if other_index == index:
+                    text = (
+                        r"{\c&H0000FFFF&"
+                        r"\fscx112\fscy112"
+                        r"\t(0,100,\fscx100\fscy100)}"
+                        + text
+                        + r"{\c&H00FFFFFF&"
+                        r"\fscx100\fscy100}"
+                    )
+
+                parts.append(text)
+
+            phrase = " ".join(parts)
 
             events.append(
-                "Dialogue: 1,"
+                "Dialogue: 0,"
                 + ass_time(word_start)
                 + ","
-                + ass_time(word_end)
+                + ass_time(event_end)
                 + ",Default,,0,0,0,,"
-                + highlighted
+                + phrase
             )
 
     output_path = Path(output_path)
@@ -189,4 +179,4 @@ if __name__ == "__main__":
         float(sys.argv[2]),
         float(sys.argv[3]),
         sys.argv[4],
-    )
+            )
