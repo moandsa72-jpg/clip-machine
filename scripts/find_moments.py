@@ -423,13 +423,13 @@ def score_candidate(text, duration):
 
     if exclamation_count(text) > 0:
        def is_thought_end(text):
-    text = clean_text(text)
+           text = clean_text(text)
 
-    if not text:
-        return False
+           if not text:
+               return False
 
-    return text.endswith((".", "!", "?")) 
-        hook_score += 2
+           return text.endswith((".", "!", "?")) 
+           hook_score += 2
 
 
     # --------------------------------------------------------
