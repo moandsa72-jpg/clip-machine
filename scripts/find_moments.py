@@ -195,6 +195,13 @@ def question_count(text):
 def exclamation_count(text):
     return text.count("!")
 
+def is_thought_end(text):
+    text = clean_text(text)
+
+    if not text:
+        return False
+
+    return text.endswith((".", "!", "?"))
 
 # ============================================================
 # SCORE ONE CANDIDATE
