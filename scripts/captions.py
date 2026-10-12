@@ -28,6 +28,10 @@ def escape_text(text):
     )
 
 
+def centiseconds(seconds):
+    return max(1, round(seconds * 100))
+
+
 def create_ass(transcript_path, clip_start, clip_end, output_path):
     with open(transcript_path, "r", encoding="utf-8") as file:
         transcript = json.load(file)
@@ -61,7 +65,7 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
             "Check work/transcript.json."
         )
 
-    # Group words into short, readable caption phrases.
+    # Keep captions short and readable.
     groups = []
     current = []
 
@@ -79,7 +83,7 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
         groups.append(current)
 
     header = """[Script Info]
-Title: Clip Machine Improved Animated Captions
+Title: Clip Machine Precise Word Captions
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
@@ -88,7 +92,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,DejaVu Sans,64,&H00FFFFFF,&H0000FFFF,&H00101010,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,2,80,80,360,1
+Style: Default,DejaVu Sans,72,&H00FFFFFF,&H0000FFFF,&H00101010,&H80000000,-1,0,0,0,100,100,0,0,1,5,2,2,80,80,360,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -98,58 +102,62 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     for group in groups:
         group_start = group[0]["start"]
+
         group_end = max(
             group[-1]["end"],
             group_start + 0.12
         )
 
+        # Base phrase: always white.
+        base_text = " ".join(
+            escape_text(item["word"])
+            for item in group
+        )
+
+        events.append(
+            "Dialogue: 0,"
+            + ass_time(group_start)
+            + ","
+            + ass_time(group_end)
+            + ",Default,,0,0,0,,"
+            + base_text
+        )
+
+        # Yellow active word.
         for index, item in enumerate(group):
             word_start = item["start"]
 
-            # Keep the whole phrase visible until the next
-            # word becomes active.
             if index + 1 < len(group):
                 next_word_start = group[index + 1]["start"]
-
-                event_end = max(
+                word_end = max(
                     next_word_start,
-                    word_start + 0.06
+                    item["end"]
                 )
             else:
-                event_end = group_end
+                word_end = group_end
 
-            event_end = min(event_end, group_end)
+            word_end = min(word_end, group_end)
 
-            if event_end <= word_start:
-                event_end = word_start + 0.08
+            if word_end <= word_start:
+                word_end = word_start + 0.08
 
-            parts = []
+            word_text = escape_text(item["word"])
 
-            for other_index, other in enumerate(group):
-                text = escape_text(other["word"])
-
-                if other_index == index:
-                    # Yellow active word with a subtle pop.
-                    text = (
-                        r"{\c&H0000FFFF&"
-                        r"\fscx112\fscy112"
-                        r"\t(0,100,\fscx100\fscy100)}"
-                        + text
-                        + r"{\c&H00FFFFFF&"
-                        r"\fscx100\fscy100}"
-                    )
-
-                parts.append(text)
-
-            phrase = " ".join(parts)
+            # Yellow active word.
+            highlighted = (
+                r"{\c&H0000FFFF&"
+                r"\fscx108\fscy108"
+                r"\t(0,80,\fscx100\fscy100)}"
+                + word_text
+            )
 
             events.append(
-                "Dialogue: 0,"
+                "Dialogue: 1,"
                 + ass_time(word_start)
                 + ","
-                + ass_time(event_end)
+                + ass_time(word_end)
                 + ",Default,,0,0,0,,"
-                + phrase
+                + highlighted
             )
 
     output_path = Path(output_path)
@@ -160,7 +168,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         file.write("\n".join(events))
         file.write("\n")
 
-    print("IMPROVED ANIMATED CAPTIONS CREATED")
+    print("PRECISE WORD-SYNC CAPTIONS CREATED")
     print(f"Words: {len(words)}")
     print(f"Caption groups: {len(groups)}")
     print(f"Caption events: {len(events)}")
