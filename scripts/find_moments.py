@@ -5,32 +5,37 @@ from pathlib import Path
 
 
 # ============================================================
-# CLIP MACHINE — SMART MOMENT DETECTOR V2
+# CLIP MACHINE — SMART MOMENT DETECTOR V3
 # ============================================================
 #
-# Finds short-form candidates using:
+# V3 changes the detector from:
 #
-#   • opening hook strength
-#   • curiosity
-#   • strong statements
-#   • questions
-#   • numbers / specificity
-#   • information density
-#   • emotional language
-#   • contrast
-#   • story structure
-#   • setup -> payoff
-#   • complete-thought endings
-#   • conversational language
-#   • duration quality
-#   • repetition penalties
-#   • filler penalties
-#   • weak-opening penalties
+#     "interesting words = good clip"
+#
+# into:
+#
+#     "good scene structure + understandable context
+#      + strong content = good clip"
+#
+# Pipeline:
+#
+#     transcript
+#         ↓
+#     natural scene starts
+#         ↓
+#     candidate windows
+#         ↓
+#     quality gate
+#         ↓
+#     structural analysis
+#         ↓
+#     entertainment scoring
+#         ↓
+#     overlap removal
+#         ↓
+#     final moments
 #
 # No arbitrary maximum number of clips.
-#
-# The detector is deterministic:
-# the same transcript produces the same result.
 # ============================================================
 
 
@@ -39,55 +44,156 @@ IDEAL_MIN_DURATION = 15
 IDEAL_MAX_DURATION = 27
 MAX_DURATION = 35
 
+DETECTOR_VERSION = "smart-v3"
+
 
 # ============================================================
 # VOCABULARY
 # ============================================================
 
 HOOK_WORDS = {
-    "secret", "mistake", "truth", "crazy", "actually",
-    "never", "always", "best", "worst", "why", "how",
-    "important", "problem", "difference", "real", "learn",
-    "learned", "discovered", "imagine", "simple", "easy",
-    "hard", "wrong", "right", "first", "finally",
-    "because", "nobody", "everyone", "nothing",
-    "everything", "really", "seriously", "literally",
-    "apparently", "turns", "turned", "happened",
-    "happens", "dangerous", "weird", "insane",
-    "shocking", "surprising", "unexpected"
+    "secret",
+    "mistake",
+    "truth",
+    "crazy",
+    "actually",
+    "never",
+    "always",
+    "best",
+    "worst",
+    "why",
+    "how",
+    "important",
+    "problem",
+    "difference",
+    "real",
+    "learn",
+    "learned",
+    "discovered",
+    "imagine",
+    "simple",
+    "easy",
+    "hard",
+    "wrong",
+    "right",
+    "first",
+    "finally",
+    "because",
+    "nobody",
+    "everyone",
+    "nothing",
+    "everything",
+    "really",
+    "seriously",
+    "literally",
+    "apparently",
+    "turns",
+    "turned",
+    "happened",
+    "happens",
+    "dangerous",
+    "weird",
+    "insane",
+    "shocking",
+    "surprising",
+    "unexpected",
+    "unbelievable",
 }
 
 
 CURIOSITY_WORDS = {
-    "why", "how", "secret", "reason", "actually",
-    "truth", "discovered", "revealed", "happened",
-    "happens", "difference", "problem", "because",
-    "before", "after", "until", "instead", "without",
-    "unless", "never", "really"
+    "why",
+    "how",
+    "secret",
+    "reason",
+    "actually",
+    "truth",
+    "discovered",
+    "revealed",
+    "happened",
+    "happens",
+    "difference",
+    "problem",
+    "because",
+    "before",
+    "after",
+    "until",
+    "instead",
+    "without",
+    "unless",
+    "never",
+    "really",
 }
 
 
 STRONG_WORDS = {
-    "must", "need", "important", "wrong", "right",
-    "never", "always", "best", "worst", "dangerous",
-    "impossible", "possible", "critical", "massive",
-    "huge", "crazy", "insane", "shocking", "secret",
-    "truth", "failure", "success", "win", "lose"
+    "must",
+    "need",
+    "important",
+    "wrong",
+    "right",
+    "never",
+    "always",
+    "best",
+    "worst",
+    "dangerous",
+    "impossible",
+    "possible",
+    "critical",
+    "massive",
+    "huge",
+    "crazy",
+    "insane",
+    "shocking",
+    "secret",
+    "truth",
+    "failure",
+    "success",
+    "win",
+    "lose",
+    "destroy",
+    "destroyed",
+    "fight",
+    "fighting",
 }
 
 
 EMOTION_WORDS = {
-    "love", "hate", "angry", "afraid", "fear",
-    "scared", "happy", "sad", "excited", "surprised",
-    "shocked", "embarrassed", "frustrated", "worried",
-    "amazing", "terrible", "horrible", "beautiful",
-    "funny", "crazy", "insane", "unbelievable"
+    "love",
+    "hate",
+    "angry",
+    "afraid",
+    "fear",
+    "scared",
+    "happy",
+    "sad",
+    "excited",
+    "surprised",
+    "shocked",
+    "embarrassed",
+    "frustrated",
+    "worried",
+    "amazing",
+    "terrible",
+    "horrible",
+    "beautiful",
+    "funny",
+    "crazy",
+    "insane",
+    "unbelievable",
 }
 
 
 CONTRAST_WORDS = {
-    "but", "however", "although", "instead",
-    "rather", "yet", "except", "while", "though"
+    "but",
+    "however",
+    "although",
+    "instead",
+    "rather",
+    "yet",
+    "except",
+    "while",
+    "though",
 }
 
 
@@ -103,7 +209,9 @@ SETUP_MARKERS = {
     "the reason",
     "until",
     "originally",
-    "initially"
+    "initially",
+    "at the time",
+    "back then",
 }
 
 
@@ -122,7 +230,23 @@ PAYOFF_MARKERS = {
     "what i learned",
     "what we learned",
     "the answer",
-    "the truth is"
+    "the truth is",
+    "that's when",
+    "this is why",
+}
+
+
+ANSWER_MARKERS = {
+    "because",
+    "so",
+    "that's why",
+    "that is why",
+    "the reason",
+    "the answer",
+    "it was",
+    "it is",
+    "actually",
+    "turns out",
 }
 
 
@@ -137,7 +261,8 @@ WEAK_START_WORDS = {
     "yeah",
     "like",
     "and",
-    "then"
+    "then",
+    "oh",
 }
 
 
@@ -148,7 +273,39 @@ FILLER_WORDS = {
     "basically",
     "actually",
     "sort",
-    "kind"
+    "kind",
+    "youknow",
+}
+
+
+REFERENCE_START_WORDS = {
+    "he",
+    "she",
+    "they",
+    "it",
+    "this",
+    "that",
+    "these",
+    "those",
+    "there",
+    "here",
+}
+
+
+SOCIAL_OPENING_WORDS = {
+    "clap",
+    "clapping",
+    "welcome",
+    "gang",
+    "guys",
+    "everyone",
+    "thanks",
+    "thank",
+    "please",
+    "hello",
+    "hi",
+    "congratulations",
+    "congrats",
 }
 
 
@@ -157,7 +314,11 @@ FILLER_WORDS = {
 # ============================================================
 
 def clean_text(text):
-    return re.sub(r"\s+", " ", str(text)).strip()
+    return re.sub(
+        r"\s+",
+        " ",
+        str(text)
+    ).strip()
 
 
 def get_words(text):
@@ -192,6 +353,15 @@ def exclamation_count(text):
     return text.count("!")
 
 
+def sentence_count(text):
+    return len(
+        re.findall(
+            r"[.!?]+",
+            text
+        )
+    )
+
+
 def is_thought_end(text):
     text = clean_text(text)
 
@@ -203,20 +373,192 @@ def is_thought_end(text):
     )
 
 
-def sentence_count(text):
-    return len(
-        re.findall(
-            r"[.!?]+",
-            text
-        )
+# ============================================================
+# NATURAL SCENE START
+# ============================================================
+
+def is_natural_start(
+    segments,
+    index
+):
+    if index == 0:
+        return True
+
+    current = segments[index]
+    previous = segments[index - 1]
+
+    current_text = clean_text(
+        current.get("text", "")
     )
 
+    previous_text = clean_text(
+        previous.get("text", "")
+    )
+
+    if not current_text:
+        return False
+
+    # A new sentence after a completed thought.
+    if is_thought_end(previous_text):
+        return True
+
+    # A noticeable silence can indicate a new thought.
+    try:
+        previous_end = float(
+            previous["end"]
+        )
+
+        current_start = float(
+            current["start"]
+        )
+
+        if current_start - previous_end >= 0.80:
+            return True
+
+    except (
+        KeyError,
+        TypeError,
+        ValueError
+    ):
+        pass
+
+    return False
+
 
 # ============================================================
-# STRUCTURE ANALYSIS
+# OPENING QUALITY
 # ============================================================
 
-def calculate_structure_score(text):
+def analyze_opening(text):
+
+    words = get_words(text)
+
+    result = {
+        "score": 0,
+        "weak": False,
+        "fragmentary": False,
+        "social": False,
+        "reference": False,
+        "filler": 0,
+    }
+
+    if not words:
+        result["weak"] = True
+        result["fragmentary"] = True
+        return result
+
+    first_word = words[0]
+
+    if first_word in WEAK_START_WORDS:
+        result["weak"] = True
+        result["score"] -= 4
+
+    if first_word in REFERENCE_START_WORDS:
+        result["reference"] = True
+        result["score"] -= 3
+
+    if first_word in SOCIAL_OPENING_WORDS:
+        result["social"] = True
+        result["score"] -= 4
+
+    opening = words[:8]
+
+    filler_count = sum(
+        1
+        for word in opening
+        if word in FILLER_WORDS
+    )
+
+    result["filler"] = filler_count
+
+    if filler_count:
+        result["score"] -= min(
+            filler_count * 2,
+            6
+        )
+
+    # Extremely weak opening:
+    # filler/social language with no actual hook.
+    if (
+        result["weak"]
+        and result["social"]
+        and len(words) >= 5
+    ):
+        result["fragmentary"] = True
+
+    return result
+
+
+# ============================================================
+# SELF-CONTAINEDNESS
+# ============================================================
+
+def calculate_standalone_score(text):
+
+    words = get_words(text)
+
+    if not words:
+        return 0
+
+    score = 0
+
+    opening = words[:10]
+
+    # Direct audience language is useful.
+    direct_words = {
+        "you",
+        "your",
+        "we",
+        "i",
+        "my",
+        "our",
+    }
+
+    direct_hits = sum(
+        1
+        for word in opening
+        if word in direct_words
+    )
+
+    if direct_hits:
+        score += min(
+            direct_hits * 2,
+            6
+        )
+
+    # Questions can make a clip understandable.
+    if question_count(text):
+        score += 3
+
+    # A named/specific subject helps.
+    if count_numbers(text):
+        score += 2
+
+    # Penalize unexplained references at the beginning.
+    if opening:
+        if opening[0] in REFERENCE_START_WORDS:
+            score -= 5
+
+    # Very short vague openings are weak.
+    if len(opening) >= 2:
+        vague_pair = (
+            opening[0] in REFERENCE_START_WORDS
+            and opening[1] in REFERENCE_START_WORDS
+        )
+
+        if vague_pair:
+            score -= 5
+
+    return score
+
+
+# ============================================================
+# STRUCTURE
+# ============================================================
+
+def calculate_structure(
+    text
+):
 
     text_lower = text.lower()
 
@@ -232,9 +574,19 @@ def calculate_structure_score(text):
         if marker in text_lower
     )
 
+    answer_hits = sum(
+        1
+        for marker in ANSWER_MARKERS
+        if marker in text_lower
+    )
+
     contrast_hits = count_words(
         text_lower,
         CONTRAST_WORDS
+    )
+
+    question_hits = question_count(
+        text
     )
 
     score = 0
@@ -248,7 +600,13 @@ def calculate_structure_score(text):
     if payoff_hits:
         score += min(
             payoff_hits * 4,
-            10
+            12
+        )
+
+    if answer_hits:
+        score += min(
+            answer_hits * 2,
+            6
         )
 
     if contrast_hits:
@@ -257,86 +615,28 @@ def calculate_structure_score(text):
             6
         )
 
-    # Strong signal:
-    # setup + payoff + contrast.
-    if setup_hits and payoff_hits:
+    if (
+        question_hits
+        and answer_hits
+    ):
+        score += 7
+
+    if (
+        setup_hits
+        and payoff_hits
+    ):
         score += 8
 
     return score
 
 
 # ============================================================
-# OPENING HOOK ANALYSIS
-# ============================================================
-
-def calculate_opening_hook(text):
-
-    words = get_words(text)
-
-    if not words:
-        return 0
-
-    opening = words[:12]
-
-    score = 0
-
-    hook_hits = sum(
-        1
-        for word in opening
-        if word in HOOK_WORDS
-    )
-
-    curiosity_hits = sum(
-        1
-        for word in opening
-        if word in CURIOSITY_WORDS
-    )
-
-    strong_hits = sum(
-        1
-        for word in opening
-        if word in STRONG_WORDS
-    )
-
-    score += min(
-        hook_hits * 2,
-        8
-    )
-
-    score += min(
-        curiosity_hits * 2,
-        6
-    )
-
-    score += min(
-        strong_hits * 2,
-        6
-    )
-
-    if words[0] in WEAK_START_WORDS:
-        score -= 5
-
-    if len(words) >= 3:
-        first_three = " ".join(words[:3])
-
-        if first_three.count("um") > 0:
-            score -= 2
-
-    return max(
-        0,
-        score
-    )
-
-
-# ============================================================
-# PAYOFF ANALYSIS
+# PAYOFF
 # ============================================================
 
 def calculate_payoff_score(text):
 
     text_lower = text.lower()
-
-    score = 0
 
     setup_hits = sum(
         1
@@ -350,71 +650,34 @@ def calculate_payoff_score(text):
         if marker in text_lower
     )
 
-    contrast_hits = count_words(
-        text_lower,
-        CONTRAST_WORDS
+    answer_hits = sum(
+        1
+        for marker in ANSWER_MARKERS
+        if marker in text_lower
     )
-
-    if setup_hits:
-        score += min(
-            setup_hits * 2,
-            6
-        )
-
-    if payoff_hits:
-        score += min(
-            payoff_hits * 4,
-            12
-        )
-
-    if contrast_hits:
-        score += min(
-            contrast_hits * 2,
-            6
-        )
-
-    if setup_hits and payoff_hits:
-        score += 8
-
-    return score
-
-
-# ============================================================
-# ENDING ANALYSIS
-# ============================================================
-
-def calculate_ending_score(text):
-
-    words = get_words(text)
-
-    if not words:
-        return 0
 
     score = 0
 
-    ending = words[-12:]
-
-    ending_strong = sum(
-        1
-        for word in ending
-        if word in STRONG_WORDS
-    )
-
-    ending_hook = sum(
-        1
-        for word in ending
-        if word in HOOK_WORDS
-    )
-
     score += min(
-        ending_strong * 2,
+        setup_hits * 2,
         6
     )
 
     score += min(
-        ending_hook * 1.5,
-        5
+        payoff_hits * 4,
+        12
     )
+
+    score += min(
+        answer_hits * 2,
+        6
+    )
+
+    if (
+        setup_hits
+        and payoff_hits
+    ):
+        score += 8
 
     return score
 
@@ -426,14 +689,20 @@ def calculate_ending_score(text):
 def score_candidate(
     text,
     duration,
-    complete_thought
+    complete_thought,
+    natural_start
 ):
 
     words = get_words(text)
 
+    opening = analyze_opening(
+        text
+    )
+
     if not words:
         return {
             "score": 0,
+            "quality_score": 0,
             "hook_score": 0,
             "curiosity_score": 0,
             "information_score": 0,
@@ -444,11 +713,13 @@ def score_candidate(
             "structure_score": 0,
             "emotion_score": 0,
             "ending_score": 0,
+            "standalone_score": 0,
             "boundary_score": 0,
-            "penalty": 0
+            "penalty": 0,
+            "rejection_flags": [
+                "empty"
+            ],
         }
-
-    text_lower = text.lower()
 
     hook_score = 0
     curiosity_score = 0
@@ -460,25 +731,64 @@ def score_candidate(
     structure_score = 0
     emotion_score = 0
     ending_score = 0
+    standalone_score = 0
     boundary_score = 0
     penalty = 0
 
+    rejection_flags = []
+
     # --------------------------------------------------------
-    # HOOK
+    # OPENING
     # --------------------------------------------------------
 
-    hook_score += calculate_opening_hook(
-        text
+    hook_score += max(
+        0,
+        opening["score"]
     )
 
-    # Overall hook vocabulary.
+    if opening["weak"]:
+        penalty += 4
+
+    if opening["reference"]:
+        penalty += 3
+
+    if opening["social"]:
+        penalty += 4
+
+    if opening["fragmentary"]:
+        penalty += 7
+        rejection_flags.append(
+            "weak_social_opening"
+        )
+
+    if opening["filler"] >= 2:
+        penalty += 4
+        rejection_flags.append(
+            "filler_opening"
+        )
+
+    # --------------------------------------------------------
+    # HOOK VOCABULARY
+    # --------------------------------------------------------
+
     hook_hits = count_words(
-        text_lower,
+        text,
         HOOK_WORDS
     )
 
     hook_score += min(
         hook_hits * 1.5,
+        12
+    )
+
+    # Strong language.
+    strong_hits = count_words(
+        text,
+        STRONG_WORDS
+    )
+
+    hook_score += min(
+        strong_hits * 1.5,
         10
     )
 
@@ -487,13 +797,13 @@ def score_candidate(
     # --------------------------------------------------------
 
     curiosity_hits = count_words(
-        text_lower,
+        text,
         CURIOSITY_WORDS
     )
 
     curiosity_score += min(
         curiosity_hits * 2,
-        14
+        12
     )
 
     questions = question_count(
@@ -507,25 +817,11 @@ def score_candidate(
         )
 
     # --------------------------------------------------------
-    # STRONG LANGUAGE
-    # --------------------------------------------------------
-
-    strong_hits = count_words(
-        text_lower,
-        STRONG_WORDS
-    )
-
-    hook_score += min(
-        strong_hits * 1.5,
-        9
-    )
-
-    # --------------------------------------------------------
     # EMOTION
     # --------------------------------------------------------
 
     emotion_hits = count_words(
-        text_lower,
+        text,
         EMOTION_WORDS
     )
 
@@ -533,21 +829,6 @@ def score_candidate(
         emotion_hits * 2,
         10
     )
-
-    # --------------------------------------------------------
-    # CONTRAST
-    # --------------------------------------------------------
-
-    contrast_hits = count_words(
-        text_lower,
-        CONTRAST_WORDS
-    )
-
-    if contrast_hits:
-        structure_score += min(
-            contrast_hits * 2,
-            8
-        )
 
     # --------------------------------------------------------
     # SPECIFICITY
@@ -581,7 +862,7 @@ def score_candidate(
         information_score += 2
 
     # --------------------------------------------------------
-    # CONVERSATIONAL LANGUAGE
+    # CONVERSATION
     # --------------------------------------------------------
 
     conversational_words = {
@@ -592,7 +873,9 @@ def score_candidate(
         "i",
         "me",
         "they",
-        "them"
+        "them",
+        "my",
+        "our",
     }
 
     conversation_hits = sum(
@@ -630,38 +913,96 @@ def score_candidate(
         < duration
         <= MAX_DURATION
     ):
-        duration_score += 4
+        duration_score += 2
 
     else:
-        duration_score -= 2
+        duration_score -= 3
+
+    if duration > 32:
+        penalty += 2
 
     # --------------------------------------------------------
-    # COMPLETE THOUGHT
+    # BOUNDARY
     # --------------------------------------------------------
 
     if complete_thought:
         boundary_score += 6
     else:
+        penalty += 7
+        rejection_flags.append(
+            "incomplete_thought"
+        )
+
+    if natural_start:
+        boundary_score += 4
+    else:
         penalty += 5
+        rejection_flags.append(
+            "unnatural_start"
+        )
 
     # --------------------------------------------------------
-    # WEAK START
+    # STANDALONE
     # --------------------------------------------------------
 
-    if words[0] in WEAK_START_WORDS:
-        penalty += 4
-
-    # Additional weak-opening check.
-    opening = words[:5]
-
-    weak_count = sum(
-        1
-        for word in opening
-        if word in WEAK_START_WORDS
+    standalone_score = (
+        calculate_standalone_score(
+            text
+        )
     )
 
-    if weak_count >= 2:
-        penalty += 3
+    if standalone_score < 0:
+        penalty += abs(
+            standalone_score
+        )
+
+        rejection_flags.append(
+            "weak_context"
+        )
+
+    # --------------------------------------------------------
+    # STRUCTURE
+    # --------------------------------------------------------
+
+    structure_score = calculate_structure(
+        text
+    )
+
+    payoff_score = calculate_payoff_score(
+        text
+    )
+
+    # --------------------------------------------------------
+    # ENDING
+    # --------------------------------------------------------
+
+    ending_words = words[-10:]
+
+    ending_strong = sum(
+        1
+        for word in ending_words
+        if word in STRONG_WORDS
+    )
+
+    ending_hook = sum(
+        1
+        for word in ending_words
+        if word in HOOK_WORDS
+    )
+
+    ending_score += min(
+        ending_strong * 2,
+        6
+    )
+
+    ending_score += min(
+        ending_hook * 1.5,
+        5
+    )
+
+    # A completed sentence is important.
+    if complete_thought:
+        ending_score += 3
 
     # --------------------------------------------------------
     # REPETITION
@@ -669,14 +1010,20 @@ def score_candidate(
 
     unique_ratio = (
         len(set(words))
-        / max(len(words), 1)
+        / max(
+            len(words),
+            1
+        )
     )
 
     if unique_ratio < 0.40:
-        penalty += 6
+        penalty += 7
+        rejection_flags.append(
+            "heavy_repetition"
+        )
 
     elif unique_ratio < 0.50:
-        penalty += 3
+        penalty += 4
 
     # --------------------------------------------------------
     # FILLER
@@ -688,15 +1035,18 @@ def score_candidate(
         if word in FILLER_WORDS
     )
 
-    if len(words) >= 15:
+    if word_count >= 15:
 
         filler_ratio = (
             filler_hits
-            / len(words)
+            / word_count
         )
 
         if filler_ratio > 0.12:
-            penalty += 5
+            penalty += 6
+            rejection_flags.append(
+                "heavy_filler"
+            )
 
         elif filler_ratio > 0.08:
             penalty += 3
@@ -713,29 +1063,35 @@ def score_candidate(
         word_count >= 30
         and sentences >= 8
     ):
-        penalty += 3
+        penalty += 4
+        rejection_flags.append(
+            "fragmented_delivery"
+        )
 
     # --------------------------------------------------------
-    # STRUCTURE
+    # SOCIAL / HOUSEKEEPING CONTENT
     # --------------------------------------------------------
 
-    structure_score += calculate_structure_score(
-        text
+    social_hits = count_words(
+        text,
+        SOCIAL_OPENING_WORDS
     )
 
-    payoff_score = calculate_payoff_score(
-        text
-    )
-
-    ending_score = calculate_ending_score(
-        text
-    )
+    if (
+        social_hits >= 3
+        and structure_score < 8
+        and payoff_score < 8
+    ):
+        penalty += 6
+        rejection_flags.append(
+            "social_housekeeping"
+        )
 
     # --------------------------------------------------------
     # FINAL SCORE
     # --------------------------------------------------------
 
-    score = (
+    raw_score = (
         hook_score
         + curiosity_score
         + information_score
@@ -746,13 +1102,33 @@ def score_candidate(
         + structure_score
         + emotion_score
         + ending_score
+        + standalone_score
         + boundary_score
         - penalty
     )
 
+    quality_score = (
+        boundary_score
+        + standalone_score
+        + structure_score
+        + ending_score
+        + information_score
+        - penalty
+    )
+
     return {
-        "score": round(score, 2),
-        "hook_score": round(hook_score, 2),
+        "score": round(
+            raw_score,
+            2
+        ),
+        "quality_score": round(
+            quality_score,
+            2
+        ),
+        "hook_score": round(
+            hook_score,
+            2
+        ),
         "curiosity_score": round(
             curiosity_score,
             2
@@ -789,6 +1165,10 @@ def score_candidate(
             ending_score,
             2
         ),
+        "standalone_score": round(
+            standalone_score,
+            2
+        ),
         "boundary_score": round(
             boundary_score,
             2
@@ -796,21 +1176,81 @@ def score_candidate(
         "penalty": round(
             penalty,
             2
-        )
+        ),
+        "rejection_flags": rejection_flags,
     }
 
 
 # ============================================================
-# BUILD WINDOWS
+# QUALITY GATE
 # ============================================================
 
-def build_windows(segments):
+def passes_quality_gate(scores):
+
+    flags = scores["rejection_flags"]
+
+    # Hard failures.
+    hard_failures = {
+        "empty",
+        "weak_social_opening",
+        "heavy_repetition",
+        "heavy_filler",
+        "fragmented_delivery",
+    }
+
+    if any(
+        flag in hard_failures
+        for flag in flags
+    ):
+        return False, "hard_quality_failure"
+
+    # Incomplete thoughts are allowed only for
+    # emergency transcript cases.
+    if (
+        "incomplete_thought" in flags
+        and "unnatural_start" in flags
+    ):
+        return False, "bad_boundaries"
+
+    # A clip must have enough actual quality.
+    if scores["quality_score"] < 12:
+        return False, "low_quality"
+
+    # Avoid clips that are almost entirely curiosity
+    # vocabulary without supporting information.
+    if (
+        scores["curiosity_score"] >= 12
+        and scores["information_score"] == 0
+        and scores["specificity_score"] == 0
+        and scores["payoff_score"] == 0
+        and scores["structure_score"] == 0
+        and scores["emotion_score"] == 0
+    ):
+        return False, "curiosity_without_content"
+
+    return True, ""
+
+
+# ============================================================
+# BUILD CANDIDATE WINDOWS
+# ============================================================
+
+def build_windows(
+    segments
+):
 
     windows = []
+    rejected = []
 
     for i, start_segment in enumerate(
         segments
     ):
+
+        if not is_natural_start(
+            segments,
+            i
+        ):
+            continue
 
         start = float(
             start_segment["start"]
@@ -827,19 +1267,25 @@ def build_windows(segments):
                 segments[j]["end"]
             )
 
-            duration = end - start
+            duration = (
+                end
+                - start
+            )
 
             if duration > MAX_DURATION:
                 break
 
-            text_parts.append(
-                clean_text(
-                    segments[j].get(
-                        "text",
-                        ""
-                    )
+            segment_text = clean_text(
+                segments[j].get(
+                    "text",
+                    ""
                 )
             )
+
+            if segment_text:
+                text_parts.append(
+                    segment_text
+                )
 
             if duration < MIN_DURATION:
                 continue
@@ -861,60 +1307,60 @@ def build_windows(segments):
             scores = score_candidate(
                 text,
                 duration,
-                complete_thought
+                complete_thought,
+                True
             )
 
-            # Only keep naturally finished thoughts,
-            # unless the transcript gives us no sentence
-            # boundary before the maximum window.
-            if complete_thought:
+            passes, reason = passes_quality_gate(
+                scores
+            )
 
-                windows.append({
-                    "start": round(
-                        start,
-                        3
-                    ),
-                    "end": round(
-                        end,
-                        3
-                    ),
-                    "duration": round(
-                        duration,
-                        3
-                    ),
-                    "text": text,
-                    **scores
+            candidate = {
+                "start": round(
+                    start,
+                    3
+                ),
+                "end": round(
+                    end,
+                    3
+                ),
+                "duration": round(
+                    duration,
+                    3
+                ),
+                "text": text,
+                **scores
+            }
+
+            if passes:
+
+                windows.append(
+                    candidate
+                )
+
+            else:
+
+                rejected.append({
+                    "start": candidate["start"],
+                    "end": candidate["end"],
+                    "score": candidate["score"],
+                    "reason": reason,
+                    "flags": candidate[
+                        "rejection_flags"
+                    ],
                 })
 
-            elif duration >= MAX_DURATION - 1:
-
-                # Emergency fallback for transcripts
-                # without useful punctuation.
-                windows.append({
-                    "start": round(
-                        start,
-                        3
-                    ),
-                    "end": round(
-                        end,
-                        3
-                    ),
-                    "duration": round(
-                        duration,
-                        3
-                    ),
-                    "text": text,
-                    **scores
-                })
-
-    return windows
+    return windows, rejected
 
 
 # ============================================================
 # OVERLAP
 # ============================================================
 
-def overlap_ratio(a, b):
+def overlap_ratio(
+    a,
+    b
+):
 
     latest_start = max(
         a["start"],
@@ -928,7 +1374,8 @@ def overlap_ratio(a, b):
 
     overlap = max(
         0,
-        earliest_end - latest_start
+        earliest_end
+        - latest_start
     )
 
     shorter = min(
@@ -939,14 +1386,19 @@ def overlap_ratio(a, b):
     if shorter <= 0:
         return 0
 
-    return overlap / shorter
+    return (
+        overlap
+        / shorter
+    )
 
 
 # ============================================================
 # REMOVE REDUNDANT CANDIDATES
 # ============================================================
 
-def remove_overlaps(windows):
+def remove_overlaps(
+    windows
+):
 
     selected = []
 
@@ -954,16 +1406,18 @@ def remove_overlaps(windows):
         windows,
         key=lambda item: (
             item["score"],
+            item["quality_score"],
             item["payoff_score"],
             item["structure_score"],
             item["hook_score"],
             item["curiosity_score"],
             item["information_score"],
             -abs(
-                item["duration"] - 20
-            )
+                item["duration"]
+                - 20
+            ),
         ),
-        reverse=True
+        reverse=True,
     )
 
     for candidate in windows:
@@ -987,7 +1441,8 @@ def remove_overlaps(windows):
 
     return sorted(
         selected,
-        key=lambda item: item["start"]
+        key=lambda item:
+        item["start"]
     )
 
 
@@ -995,21 +1450,30 @@ def remove_overlaps(windows):
 # CLASSIFICATION
 # ============================================================
 
-def classify_moment(moment):
+def classify_moment(
+    moment
+):
 
-    text = moment["text"].lower()
+    text = moment[
+        "text"
+    ].lower()
 
     if (
-        moment["payoff_score"] >= 12
+        moment["payoff_score"] >= 10
         and moment["structure_score"] >= 10
     ):
         return "setup_payoff"
 
     if (
         "?" in text
-        or moment["curiosity_score"] >= 10
+        and moment["payoff_score"] >= 4
     ):
-        return "curiosity"
+        return "question_answer"
+
+    if (
+        moment["emotion_score"] >= 7
+    ):
+        return "emotional"
 
     if (
         moment["specificity_score"] >= 6
@@ -1017,15 +1481,20 @@ def classify_moment(moment):
     ):
         return "information"
 
-    if moment["emotion_score"] >= 6:
-        return "emotional"
-
-    if moment["hook_score"] >= 12:
+    if (
+        moment["hook_score"] >= 12
+        and moment["standalone_score"] >= 0
+    ):
         return "strong_statement"
 
     if (
+        moment["curiosity_score"] >= 10
+    ):
+        return "curiosity"
+
+    if (
         "!" in text
-        or moment["hook_score"] >= 8
+        or moment["emotion_score"] >= 4
     ):
         return "high_energy"
 
@@ -1051,7 +1520,8 @@ def find_moments(
 
     if not input_path.exists():
         raise FileNotFoundError(
-            f"Transcript not found: {input_path}"
+            f"Transcript not found: "
+            f"{input_path}"
         )
 
     with open(
@@ -1060,7 +1530,9 @@ def find_moments(
         encoding="utf-8"
     ) as file:
 
-        data = json.load(file)
+        data = json.load(
+            file
+        )
 
     segments = data.get(
         "segments",
@@ -1072,7 +1544,7 @@ def find_moments(
             "Transcript contains no segments."
         )
 
-    windows = build_windows(
+    windows, rejected = build_windows(
         segments
     )
 
@@ -1090,6 +1562,8 @@ def find_moments(
             input_path
         ),
         "analysis": {
+            "detector_version":
+                DETECTOR_VERSION,
             "minimum_duration":
                 MIN_DURATION,
             "ideal_min_duration":
@@ -1098,8 +1572,12 @@ def find_moments(
                 IDEAL_MAX_DURATION,
             "maximum_duration":
                 MAX_DURATION,
-            "detector_version":
-                "smart-v2"
+            "candidate_windows":
+                len(windows),
+            "rejected_windows":
+                len(rejected),
+            "selected_moments":
+                len(moments),
         },
         "moments": moments
     }
@@ -1122,19 +1600,33 @@ def find_moments(
             indent=2
         )
 
+    # ========================================================
+    # LOG
+    # ========================================================
+
     print()
     print(
         "========================================"
     )
     print(
-        "SMART MOMENT ANALYSIS V2 COMPLETE"
+        "SMART MOMENT ANALYSIS V3 COMPLETE"
     )
     print(
         "========================================"
     )
 
     print(
-        f"Candidates selected: "
+        f"Candidate windows: "
+        f"{len(windows)}"
+    )
+
+    print(
+        f"Rejected windows: "
+        f"{len(rejected)}"
+    )
+
+    print(
+        f"Final moments: "
         f"{len(moments)}"
     )
 
@@ -1148,7 +1640,8 @@ def find_moments(
         print(
             f"#{number} "
             f"[{moment['type']}] "
-            f"score={moment['score']}"
+            f"score={moment['score']} "
+            f"quality={moment['quality_score']}"
         )
 
         print(
@@ -1198,13 +1691,23 @@ def find_moments(
         )
 
         print(
+            f"Standalone: "
+            f"{moment['standalone_score']}"
+        )
+
+        print(
             f"Ending: "
             f"{moment['ending_score']}"
         )
 
         print(
+            f"Penalty: "
+            f"{moment['penalty']}"
+        )
+
+        print(
             f"Text: "
-            f"{moment['text'][:220]}"
+            f"{moment['text'][:300]}"
         )
 
         print(
@@ -1212,13 +1715,18 @@ def find_moments(
         )
 
     print(
-        f"Output: {output_path}"
+        "Output: "
+        f"{output_path}"
     )
 
     print(
         "========================================"
     )
 
+
+# ============================================================
+# CLI
+# ============================================================
 
 if __name__ == "__main__":
 
@@ -1236,4 +1744,7 @@ if __name__ == "__main__":
     find_moments(
         sys.argv[1],
         sys.argv[2]
-        )
+)
+    
+        
+       
