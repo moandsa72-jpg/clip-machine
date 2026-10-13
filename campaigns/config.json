@@ -1,0 +1,46 @@
+{
+  "campaigns": {
+    "content_rewards": {
+      "name": "Content Rewards",
+      "type": "campaign_platform",
+      "rules": {
+        "clip_min_seconds": null,
+        "clip_max_seconds": null,
+        "allowed_platforms": [],
+        "required_hashtags": [],
+        "required_mentions": [],
+        "caption_template": "",
+        "prohibited_elements": [],
+        "submission_type": "clip_url"
+      }
+    },
+    "blastoff": {
+      "name": "BlastOff",
+      "type": "campaign_platform",
+      "rules": {
+        "clip_min_seconds": null,
+        "clip_max_seconds": null,
+        "allowed_platforms": [],
+        "required_hashtags": [],
+        "required_mentions": [],
+        "caption_template": "",
+        "prohibited_elements": [],
+        "submission_type": "clip_url"
+      }
+    },
+    "whop_clip_farm": {
+      "name": "Whop Clip Farm",
+      "type": "campaign_platform",
+      "rules": {
+        "clip_min_seconds": null,
+        "clip_max_seconds": null,
+        "allowed_platforms": [],
+        "required_hashtags": [],
+        "required_mentions": [],
+        "caption_template": "",
+        "prohibited_elements": [],
+        "submission_type": "clip_url"
+      }
+    }
+  }
+}
