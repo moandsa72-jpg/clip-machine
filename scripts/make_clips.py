@@ -38,23 +38,29 @@ def make_clip(video_path, start, end, output_path, transcript_path):
         .replace("]", "\\]")
     )
 
+    # Create a 9:16 vertical layout.
+    #
+    # Background:
+    # - Fill the entire 1080x1920 frame.
+    # - Crop excess video.
+    # - Blur it for a clean vertical background.
+    #
+    # Foreground:
+    # - Keep the original aspect ratio.
+    # - Fit the main video to a large 1400px height.
+    # - Center it horizontally and vertically.
+    #
+    # This keeps the important video large while avoiding
+    # aggressive cropping of the original footage.
     video_filter = (
-    "[0:v]split=2[bg][fg];"
-    "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
-    "crop=1080:1920,boxblur=10:5[bgblur];"
-    "[fg]scale=-1:1400[fgfit];"
-    "[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,"
-    "setsar=1[base];"
-    f"[base]subtitles='{subtitle_filter_path}'[outv]"
+        "[0:v]split=2[bg][fg];"
+        "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,boxblur=10:5[bgblur];"
+        "[fg]scale=-1:1400[fgfit];"
+        "[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,"
+        "setsar=1[base];"
+        f"[base]subtitles='{subtitle_filter_path}'[outv]"
     )
-        
-        
-        
-        
-        
-        
-        
-    
 
     command = [
         "ffmpeg",
@@ -62,21 +68,31 @@ def make_clip(video_path, start, end, output_path, transcript_path):
         "-ss", str(start),
         "-i", str(video_path),
         "-t", str(duration),
+
         "-filter_complex", video_filter,
+
         "-map", "[outv]",
         "-map", "0:a?",
+
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-crf", "20",
+
+        # Normalize audio loudness while protecting against clipping.
+        "-af",
+        "loudnorm=I=-14:TP=-1.5:LRA=11",
+
         "-c:a", "aac",
         "-b:a", "128k",
+
         "-movflags", "+faststart",
+
         str(output_path),
     ]
 
     run_command(command)
 
-    # Remove the temporary subtitle file after rendering.
+    # Remove temporary subtitle file.
     if subtitle_path.exists():
         subtitle_path.unlink()
 
@@ -110,6 +126,9 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print("Creating clips with synchronized captions.")
+    print("Audio normalization: loudnorm -14 LUFS / -1.5 dBTP")
+    print("Vertical format: 1080x1920")
+    print("Foreground height: 1400px")
     print(f"Moments found: {len(moments)}")
 
     created = 0
@@ -124,7 +143,10 @@ def main():
 
         output_path = output_dir / f"clip_{index:02d}.mp4"
 
-        print(f"Creating clip {index}: {start:.2f}s–{end:.2f}s")
+        print(
+            f"Creating clip {index}: "
+            f"{start:.2f}s–{end:.2f}s"
+        )
 
         make_clip(
             video_path,
@@ -145,4 +167,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
