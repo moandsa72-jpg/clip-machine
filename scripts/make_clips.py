@@ -71,10 +71,17 @@ def make_clip(
         )
 
         input_args = [
-            "-i",
-            str(video_path),
-            "-i",
-            str(logo_path),
+    "-i",
+    str(video_path),
+    "-loop",
+    "1",
+    "-i",
+    str(logo_path),
+        ]
+            
+            
+            
+            
         ]
 
     else:
