@@ -2,11 +2,23 @@ name: Clip Machine - Transcribe and Find Moments
 
 on:
   workflow_dispatch:
-    inputs:
-      video_url:
-        description: "Direct HTTPS video URL (leave empty to use input/)"
-        required: false
-        type: string
+   inputs:
+    campaign_id:
+      description: "Campaign to create clips for"
+      required: true
+      type: choice
+      options:
+        - blastoff_jingle_jared_rebel_audio
+        - blastoff_warren_zeiders_md_motivator
+
+    video_url:
+      description: "Direct HTTPS video URL (leave empty to use input/)"
+      required: false
+      type: string
+      
+        
+        
+        
 
 permissions:
   contents: read
