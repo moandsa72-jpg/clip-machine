@@ -14,11 +14,22 @@ def save_json(path, data):
 
     with open(path, "w", encoding="utf-8") as file:
         json.dump(data, file, indent=2, ensure_ascii=False)
-
         file.write("\n")
 
 
-def build_package(campaign_id, campaign, clips):
+def get_clip_directory(campaign_id, clips_directory):
+    if campaign_id == "blastoff_jingle_jared_rebel_audio":
+        return clips_directory.parent / "rebel_audio_clips"
+
+    return clips_directory
+
+
+def build_package(
+    campaign_id,
+    campaign,
+    clips,
+    clip_directory,
+):
     rules = campaign.get("rules", {})
 
     warnings = []
@@ -80,14 +91,18 @@ def build_package(campaign_id, campaign, clips):
             campaign_id
         ),
         "platform_type": campaign.get(
-            "type",
-            "campaign_platform"
+            "platform",
+            campaign.get(
+                "type",
+                "campaign_platform"
+            )
         ),
         "created_at": datetime.now(
             timezone.utc
         ).isoformat(),
         "status": "draft_requires_campaign_review",
         "campaign_rules": rules,
+        "clip_source_directory": str(clip_directory),
         "compliance_warnings": warnings,
         "clips": clip_packages,
         "instructions": [
@@ -134,18 +149,6 @@ def main():
             "'campaigns' object."
         )
 
-    clips = sorted(
-        clip
-        for clip in clips_directory.iterdir()
-        if clip.is_file()
-        and clip.suffix.lower() == ".mp4"
-    )
-
-    if not clips:
-        sys.exit(
-            f"No MP4 clips found in: {clips_directory}"
-        )
-
     generated = 0
 
     for campaign_id, campaign in campaigns.items():
@@ -155,10 +158,35 @@ def main():
             )
             continue
 
+        clip_directory = get_clip_directory(
+            campaign_id,
+            clips_directory
+        )
+
+        if not clip_directory.is_dir():
+            sys.exit(
+                f"Clip directory not found for "
+                f"{campaign_id}: {clip_directory}"
+            )
+
+        clips = sorted(
+            clip
+            for clip in clip_directory.iterdir()
+            if clip.is_file()
+            and clip.suffix.lower() == ".mp4"
+        )
+
+        if not clips:
+            sys.exit(
+                f"No MP4 clips found for "
+                f"{campaign_id} in: {clip_directory}"
+            )
+
         package = build_package(
             campaign_id,
             campaign,
-            clips
+            clips,
+            clip_directory,
         )
 
         output_path = (
@@ -175,6 +203,7 @@ def main():
         )
 
         print(f"  Clips included: {len(clips)}")
+        print(f"  Clip source: {clip_directory}")
         print(f"  Output: {output_path}")
         print(
             f"  Compliance warnings: "
@@ -187,7 +216,10 @@ def main():
         sys.exit("No campaign packages were generated.")
 
     print()
-    print(f"Successfully created {generated} campaign package(s).")
+    print(
+        f"Successfully created "
+        f"{generated} campaign package(s)."
+    )
 
 
 if __name__ == "__main__":
