@@ -56,15 +56,59 @@
       }
     },
     "blastoff_warren_zeiders_md_motivator": {
-      "name": "Warren Zeiders x MD Motivator — Car Giveaway Clipping Campaign",
-      "platform": "BlastOff",
-      "status": "active",
-      "clips_directory": "output/clips",
-      "payout": {
-        "model": "qualified_views_rpm",
-        "rpm": 4,
-        "currency": "USD",
-        "maximum_per_clip": null
+  "name": "Warren Zeiders x MD Motivator — Car Giveaway Clipping Campaign",
+  "platform": "BlastOff",
+  "status": "active",
+  "clips_directory": "output/clips",
+  "payout": {
+    "model": "qualified_views_rpm",
+    "rpm": 4,
+    "currency": "USD",
+    "maximum_per_clip": 500,
+    "minimum_qualified_views": 300,
+    "total_budget": 1500
+  },
+  "rules": {
+    "clip_min_seconds": null,
+    "clip_max_seconds": null,
+    "allowed_platforms": [
+      "YouTube Shorts",
+      "TikTok",
+      "Instagram Reels"
+    ],
+    "required_hashtags": [
+      "#WarrenZeiders"
+    ],
+    "required_mentions": [],
+    "caption_template": "",
+    "prohibited_elements": [
+      "Low-effort reposts",
+      "Spammy reposts",
+      "Off-brief clips",
+      "Negative or off-brand content"
+    ],
+    "submission_type": "clip_url"
+  },
+  "content_requirements": {
+    "warren_zeiders_must_be_present": true,
+    "recommended_song": true,
+    "recommended_song_min_volume_percent": 10,
+    "captions_required": true,
+    "creator_credit_recommended": true,
+    "positive_philanthropy_context": true,
+    "content_focus": [
+      "Warren Zeiders getting the car",
+      "Warren Zeiders and MD Motivator reactions",
+      "Car handoff to the family",
+      "Emotional moments",
+      "Creator personality"
+    
+  },
+  "assets": {
+    "source_assets_count": 18,
+    "source_assets_location": "Campaign source content in BlastOff"
+  }
+    
       },
       "rules": {
         "clip_min_seconds": null,
