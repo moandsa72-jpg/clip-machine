@@ -45,23 +45,17 @@ def make_clip(
         .replace("]", "\\]")
     )
 
-    # Create a 9:16 vertical layout.
-    #
-    # Background:
-    # - Fill the entire 1080x1920 frame.
-    # - Crop excess video.
-    # - Blur it for a clean vertical background.
-    #
-    # Foreground:
-    # - Keep the original aspect ratio.
-    # - Fit the main video to a large 1400px height.
-    # - Center it horizontally and vertically.
-    #
-    # Logo:
-    # - Optional.
-    # - Only added when logo_path is explicitly supplied.
-    #
-    # This preserves the existing behavior when no logo is supplied.
+    # Create the base 9:16 vertical layout.
+    video_filter = (
+        "[0:v]split=2[bg][fg];"
+        "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,boxblur=10:5[bgblur];"
+        "[fg]scale=-1:1400[fgfit];"
+        "[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,"
+        "setsar=1[base]"
+    )
+
+    # If a campaign logo was supplied, add it as a real FFmpeg input.
     if logo_path is not None:
         logo_path = Path(logo_path)
 
@@ -70,45 +64,22 @@ def make_clip(
                 f"Logo file not found: {logo_path}"
             )
 
-        logo_filter_path = str(logo_path.resolve())
-        logo_filter_path = (
-            logo_filter_path
-            .replace("\\", "\\\\")
-            .replace(":", "\\:")
-            .replace("'", "\\'")
-            .replace(",", "\\,")
-            .replace("[", "\\[")
-            .replace("]", "\\]")
-        )
-
-        video_filter = (
-            "[0:v]split=2[bg][fg];"
-            "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,boxblur=10:5[bgblur];"
-            "[fg]scale=-1:1400[fgfit];"
-            "[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,"
-            "setsar=1[base];"
-            f"movie='{logo_filter_path}'[logo];"
-            "[logo]scale=420:-1[logosmall];"
-            "[base][logosmall]overlay="
-            "(W-w)/2:70[withlogo];"
-            f"[withlogo]subtitles='{subtitle_filter_path}'[outv]"
+        video_filter += (
+            ";[1:v]scale=420:-1[logo];"
+            "[base][logo]overlay=(W-w)/2:70[branded]"
+            f";[branded]subtitles='{subtitle_filter_path}'[outv]"
         )
 
         input_args = [
             "-i",
             str(video_path),
+            "-i",
+            str(logo_path),
         ]
 
     else:
-        video_filter = (
-            "[0:v]split=2[bg][fg];"
-            "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,boxblur=10:5[bgblur];"
-            "[fg]scale=-1:1400[fgfit];"
-            "[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,"
-            "setsar=1[base];"
-            f"[base]subtitles='{subtitle_filter_path}'[outv]"
+        video_filter += (
+            f";[base]subtitles='{subtitle_filter_path}'[outv]"
         )
 
         input_args = [
