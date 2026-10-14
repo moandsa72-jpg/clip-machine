@@ -4,6 +4,7 @@
       "name": "Jingle Jared x Rebel Audio — Podcast Clipping Campaign",
       "platform": "BlastOff",
       "status": "active",
+      "clips_directory": "output/rebel_audio_clips",
       "payout": {
         "model": "qualified_views_rpm",
         "rpm": 13,
@@ -58,6 +59,7 @@
       "name": "Warren Zeiders x MD Motivator — Car Giveaway Clipping Campaign",
       "platform": "BlastOff",
       "status": "active",
+      "clips_directory": "output/clips",
       "payout": {
         "model": "qualified_views_rpm",
         "rpm": 4,
