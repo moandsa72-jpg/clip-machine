@@ -147,7 +147,39 @@ jobs:
 
           echo "Successfully generated $COUNT clip(s)."
           ls -lh output/clips/
+          
+      - name: Create Rebel Audio campaign clips
+        run: |
+          set -euo pipefail
 
+          mkdir -p output/rebel_audio_clips
+
+          python scripts/make_clips.py \
+            "$VIDEO_PATH" \
+            work/moments.json \
+            output/rebel_audio_clips \
+            work/transcript.json \
+            assets/rebel_audio_logo.png
+
+          COUNT="$(find output/rebel_audio_clips -maxdepth 1 \
+            -type f -name '*.mp4' | wc -l)"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No Rebel Audio campaign clips were generated."
+            exit 1
+          fi
+
+          echo "Successfully generated $COUNT Rebel Audio campaign clip(s)."
+          ls -lh output/rebel_audio_clips/
+
+          - name: Upload Rebel Audio campaign clips
+          uses: actions/upload-artifact@v4
+          with:
+          name: rebel-audio-campaign-clips
+          path: output/rebel_audio_clips/*.mp4
+          if-no-files-found: error
+          retention-days: 7
+          
       - name: Upload clips and analysis
         uses: actions/upload-artifact@v4
         with:
