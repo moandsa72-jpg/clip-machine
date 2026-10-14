@@ -17,11 +17,18 @@ def save_json(path, data):
         file.write("\n")
 
 
-def get_clip_directory(campaign_id, clips_directory):
-    if campaign_id == "blastoff_jingle_jared_rebel_audio":
-        return clips_directory.parent / "rebel_audio_clips"
+def resolve_clip_directory(
+    campaign,
+    default_directory,
+):
+    configured_directory = campaign.get(
+        "clips_directory"
+    )
 
-    return clips_directory
+    if not configured_directory:
+        return default_directory
+
+    return Path(configured_directory)
 
 
 def build_package(
@@ -127,7 +134,7 @@ def main():
         sys.exit(1)
 
     config_path = Path(sys.argv[1])
-    clips_directory = Path(sys.argv[2])
+    default_clips_directory = Path(sys.argv[2])
     output_directory = Path(sys.argv[3])
 
     if not config_path.is_file():
@@ -135,9 +142,10 @@ def main():
             f"Campaign config not found: {config_path}"
         )
 
-    if not clips_directory.is_dir():
+    if not default_clips_directory.is_dir():
         sys.exit(
-            f"Clips directory not found: {clips_directory}"
+            f"Default clips directory not found: "
+            f"{default_clips_directory}"
         )
 
     config = load_json(config_path)
@@ -158,9 +166,9 @@ def main():
             )
             continue
 
-        clip_directory = get_clip_directory(
-            campaign_id,
-            clips_directory
+        clip_directory = resolve_clip_directory(
+            campaign,
+            default_clips_directory
         )
 
         if not clip_directory.is_dir():
