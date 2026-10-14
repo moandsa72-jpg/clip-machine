@@ -1,22 +1,69 @@
 {
   "campaigns": {
-    "content_rewards": {
-      "name": "Content Rewards",
-      "type": "campaign_platform",
+    "blastoff_jingle_jared_rebel_audio": {
+      "name": "Jingle Jared x Rebel Audio — Podcast Clipping Campaign",
+      "platform": "BlastOff",
+      "status": "active",
+      "payout": {
+        "model": "qualified_views_rpm",
+        "rpm": 13,
+        "currency": "USD",
+        "maximum_per_clip": 500
+      },
       "rules": {
         "clip_min_seconds": null,
         "clip_max_seconds": null,
-        "allowed_platforms": [],
-        "required_hashtags": [],
+        "allowed_platforms": [
+          "YouTube Shorts",
+          "TikTok",
+          "Instagram Reels"
+        ],
+        "required_hashtags": [
+          "#RebelAudio",
+          "#JingleJared"
+        ],
         "required_mentions": [],
         "caption_template": "",
-        "prohibited_elements": [],
+        "prohibited_elements": [
+          "Low-effort edits",
+          "Duplicate reposts",
+          "Spammy accounts",
+          "Off-brief content",
+          "Non-compliant clips"
+        ],
         "submission_type": "clip_url"
+      },
+      "content_requirements": {
+        "approved_source_content_only": true,
+        "featured_person": "Jingle Jared",
+        "brand_logo_overlay_required": true,
+        "opening_hook_required": true,
+        "opening_hook_deadline_seconds": 3,
+        "captions_required": true,
+        "creator_credit_recommended": true,
+        "content_focus": [
+          "Podcasting",
+          "Rebel Audio",
+          "Funny moments",
+          "Entertaining moments"
+        ]
+      },
+      "assets": {
+        "logo_asset_required": true,
+        "source_assets_count_reported": 4,
+        "source_assets_location": "Campaign source content in BlastOff"
       }
     },
-    "blastoff": {
-      "name": "BlastOff",
-      "type": "campaign_platform",
+    "blastoff_warren_zeiders_md_motivator": {
+      "name": "Warren Zeiders x MD Motivator — Car Giveaway Clipping Campaign",
+      "platform": "BlastOff",
+      "status": "active",
+      "payout": {
+        "model": "qualified_views_rpm",
+        "rpm": 4,
+        "currency": "USD",
+        "maximum_per_clip": null
+      },
       "rules": {
         "clip_min_seconds": null,
         "clip_max_seconds": null,
@@ -26,21 +73,9 @@
         "caption_template": "",
         "prohibited_elements": [],
         "submission_type": "clip_url"
-      }
-    },
-    "whop_clip_farm": {
-      "name": "Whop Clip Farm",
-      "type": "campaign_platform",
-      "rules": {
-        "clip_min_seconds": null,
-        "clip_max_seconds": null,
-        "allowed_platforms": [],
-        "required_hashtags": [],
-        "required_mentions": [],
-        "caption_template": "",
-        "prohibited_elements": [],
-        "submission_type": "clip_url"
-      }
+      },
+      "content_requirements": {},
+      "assets": {}
     }
   }
 }
