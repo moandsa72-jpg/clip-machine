@@ -23,7 +23,6 @@ def make_clip(
 
     subtitle_path = output_path.with_suffix(".ass")
 
-    # Generate captions synchronized with the original speech.
     run_command([
         sys.executable,
         "scripts/captions.py",
@@ -33,7 +32,6 @@ def make_clip(
         str(subtitle_path),
     ])
 
-    # Build a safe FFmpeg subtitle filter path.
     subtitle_filter_path = str(subtitle_path.resolve())
     subtitle_filter_path = (
         subtitle_filter_path
@@ -45,7 +43,6 @@ def make_clip(
         .replace("]", "\\]")
     )
 
-    # Create the base 9:16 vertical layout.
     video_filter = (
         "[0:v]split=2[bg][fg];"
         "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
@@ -55,7 +52,11 @@ def make_clip(
         "setsar=1[base]"
     )
 
-    # If a campaign logo was supplied, add it as a real FFmpeg input.
+    input_args = [
+        "-i",
+        str(video_path),
+    ]
+
     if logo_path is not None:
         logo_path = Path(logo_path)
 
@@ -66,33 +67,23 @@ def make_clip(
 
         video_filter += (
             ";[1:v]scale=420:-1[logo];"
-            "[base][logo]overlay=(W-w)/2:70[branded]"
-            f";[branded]subtitles='{subtitle_filter_path}'[outv]"
+            "[base][logo]overlay=(W-w)/2:70[branded];"
+            f"[branded]subtitles='{subtitle_filter_path}'[outv]"
         )
 
         input_args = [
-    "-i",
-    str(video_path),
-    "-loop",
-    "1",
-    "-i",
-    str(logo_path),
-        ]
-            
-            
-            
-            
+            "-i",
+            str(video_path),
+            "-loop",
+            "1",
+            "-i",
+            str(logo_path),
         ]
 
     else:
         video_filter += (
             f";[base]subtitles='{subtitle_filter_path}'[outv]"
         )
-
-        input_args = [
-            "-i",
-            str(video_path),
-        ]
 
     command = [
         "ffmpeg",
@@ -102,40 +93,31 @@ def make_clip(
         *input_args,
         "-t",
         str(duration),
-
         "-filter_complex",
         video_filter,
-
         "-map",
         "[outv]",
         "-map",
         "0:a?",
-
         "-c:v",
         "libx264",
         "-preset",
         "veryfast",
         "-crf",
         "20",
-
-        # Normalize audio loudness while protecting against clipping.
         "-af",
         "loudnorm=I=-14:TP=-1.5:LRA=11",
-
         "-c:a",
         "aac",
         "-b:a",
         "128k",
-
         "-movflags",
         "+faststart",
-
         str(output_path),
     ]
 
     run_command(command)
 
-    # Remove temporary subtitle file.
     if subtitle_path.exists():
         subtitle_path.unlink()
 
@@ -166,7 +148,9 @@ def main():
 
     for path in (video_path, moments_path, transcript_path):
         if not path.exists():
-            raise FileNotFoundError(f"File not found: {path}")
+            raise FileNotFoundError(
+                f"File not found: {path}"
+            )
 
     with open(moments_path, "r", encoding="utf-8") as file:
         data = json.load(file)
