@@ -2,23 +2,19 @@ name: Clip Machine - Transcribe and Find Moments
 
 on:
   workflow_dispatch:
-   inputs:
-    campaign_id:
-      description: "Campaign to create clips for"
-      required: true
-      type: choice
-      options:
-        - blastoff_jingle_jared_rebel_audio
-        - blastoff_warren_zeiders_md_motivator
+    inputs:
+      campaign_id:
+        description: "Campaign to create clips for"
+        required: true
+        type: choice
+        options:
+          - blastoff_jingle_jared_rebel_audio
+          - blastoff_warren_zeiders_md_motivator
 
-    video_url:
-      description: "Direct HTTPS video URL (leave empty to use input/)"
-      required: false
-      type: string
-      
-        
-        
-        
+      video_url:
+        description: "Direct HTTPS video URL (leave empty to use input/)"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -57,6 +53,8 @@ jobs:
           mkdir -p input
           mkdir -p work
           mkdir -p output/clips
+          mkdir -p output/rebel_audio_clips
+          mkdir -p output/posting_packages
 
       - name: Select video source
         id: source
@@ -92,6 +90,7 @@ jobs:
           VIDEO_URL: ${{ inputs.video_url }}
         run: |
           set -euo pipefail
+
           python scripts/download_video.py \
             "$VIDEO_URL" \
             work/source_video.mp4
@@ -109,6 +108,7 @@ jobs:
       - name: Transcribe video
         run: |
           set -euo pipefail
+
           python scripts/transcribe.py \
             "$VIDEO_PATH" \
             work/transcript.json
@@ -132,74 +132,86 @@ jobs:
       - name: Find promising moments
         run: |
           set -euo pipefail
+
           python scripts/find_moments.py \
             work/transcript.json \
             work/moments.json
 
-      - name: Create vertical clips with animated captions
+      - name: Create selected campaign clips
+        env:
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
           set -euo pipefail
-          python scripts/make_clips.py \
-            "$VIDEO_PATH" \
-            work/moments.json \
+
+          case "$CAMPAIGN_ID" in
+            blastoff_jingle_jared_rebel_audio)
+              OUTPUT_DIR="output/rebel_audio_clips"
+
+              python scripts/make_clips.py \
+                "$VIDEO_PATH" \
+                work/moments.json \
+                "$OUTPUT_DIR" \
+                work/transcript.json \
+                assets/rebel_audio_logo.png
+              ;;
+
+            blastoff_warren_zeiders_md_motivator)
+              OUTPUT_DIR="output/clips"
+
+              python scripts/make_clips.py \
+                "$VIDEO_PATH" \
+                work/moments.json \
+                "$OUTPUT_DIR" \
+                work/transcript.json
+              ;;
+
+            *)
+              echo "Unsupported campaign: $CAMPAIGN_ID"
+              exit 1
+              ;;
+          esac
+
+          COUNT="$(find "$OUTPUT_DIR" -maxdepth 1 \
+            -type f -name '*.mp4' | wc -l)"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No campaign clips were generated."
+            exit 1
+          fi
+
+          echo "Successfully generated $COUNT campaign clip(s)."
+          echo "Campaign: $CAMPAIGN_ID"
+          echo "Output: $OUTPUT_DIR"
+          ls -lh "$OUTPUT_DIR"
+
+      - name: Generate selected campaign posting package
+        env:
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
+        run: |
+          set -euo pipefail
+
+          python scripts/create_posting_packages.py \
+            campaigns/config.json \
             output/clips \
-            work/transcript.json
+            output/posting_packages \
+            "$CAMPAIGN_ID"
 
-      - name: Verify generated clips
-        run: |
-          set -euo pipefail
-
-          COUNT="$(find output/clips -maxdepth 1 \
-            -type f -name '*.mp4' | wc -l)"
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo "No clips were generated."
-            exit 1
-          fi
-
-          echo "Successfully generated $COUNT clip(s)."
-          ls -lh output/clips/
-          
-      - name: Create Rebel Audio campaign clips
-        run: |
-          set -euo pipefail
-
-          mkdir -p output/rebel_audio_clips
-
-          python scripts/make_clips.py \
-            "$VIDEO_PATH" \
-            work/moments.json \
-            output/rebel_audio_clips \
-            work/transcript.json \
-            assets/rebel_audio_logo.png
-
-          COUNT="$(find output/rebel_audio_clips -maxdepth 1 \
-            -type f -name '*.mp4' | wc -l)"
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo "No Rebel Audio campaign clips were generated."
-            exit 1
-          fi
-
-          echo "Successfully generated $COUNT Rebel Audio campaign clip(s)."
-          ls -lh output/rebel_audio_clips/
-
-          - name: Upload Rebel Audio campaign clips
-          uses: actions/upload-artifact@v4
-          with:
-          name: rebel-audio-campaign-clips
-          path: output/rebel_audio_clips/*.mp4
+      - name: Upload selected campaign posting package
+        uses: actions/upload-artifact@v4
+        with:
+          name: campaign-posting-package
+          path: output/posting_packages/
           if-no-files-found: error
           retention-days: 7
-          
+
       - name: Upload clips and analysis
         uses: actions/upload-artifact@v4
         with:
           name: clip-machine-results
           path: |
             output/clips/*.mp4
+            output/rebel_audio_clips/*.mp4
             work/transcript.json
             work/moments.json
           if-no-files-found: error
           retention-days: 7
-          
