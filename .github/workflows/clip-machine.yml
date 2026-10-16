@@ -64,8 +64,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -n "$VIDEO_URL" ]; then
-            echo "source_type=url" >> "$GITHUB_OUTPUT"
+                    if [ -n "$VIDEO_URL" ]; then
+            if [[ "$VIDEO_URL" == *"drive.google.com/drive/folders/"* ]]; then
+              echo "source_type=drive_folder" >> "$GITHUB_OUTPUT"
+              echo "Google Drive folder detected."
+            else
+              echo "source_type=url" >> "$GITHUB_OUTPUT"
+              echo "Single video URL detected."
+            fi
+            
           else
             VIDEO_FILE="$(find input -maxdepth 1 -type f \
               \( -iname '*.mp4' -o -iname '*.mov' \
@@ -96,6 +103,32 @@ jobs:
             work/source_video.mp4
 
           echo "VIDEO_PATH=work/source_video.mp4" >> "$GITHUB_ENV"
+
+      - name: Download Google Drive folder
+        if: steps.source.outputs.source_type == 'drive_folder'
+        env:
+          VIDEO_URL: ${{ inputs.video_url }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p work/drive_videos
+
+          python scripts/download_drive_folder.py \
+            "$VIDEO_URL" \
+            work/drive_videos
+
+          COUNT="$(find work/drive_videos -maxdepth 1 -type f \
+            \( -iname '*.mp4' -o -iname '*.mov' \
+            -o -iname '*.mkv' -o -iname '*.webm' \
+            -o -iname '*.m4v' \) | wc -l)"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No supported videos were found in the Drive folder."
+            exit 1
+          fi
+
+          echo "Found $COUNT video(s) in Google Drive folder."
+          find work/drive_videos -maxdepth 1 -type f -print
 
       - name: Set local video path
         if: steps.source.outputs.source_type == 'local'
