@@ -9,6 +9,37 @@ def run_command(command):
     subprocess.run(command, check=True)
 
 
+def get_video_dimensions(video_path):
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "csv=s=x:p=0",
+            str(video_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    value = result.stdout.strip()
+
+    if "x" not in value:
+        raise RuntimeError(
+            f"Could not determine video dimensions: {value}"
+        )
+
+    width, height = value.split("x", 1)
+
+    return int(width), int(height)
+
+
 def make_clip(
     video_path,
     start,
@@ -43,14 +74,49 @@ def make_clip(
         .replace("]", "\\]")
     )
 
-    video_filter = (
-        "[0:v]split=2[bg][fg];"
-        "[bg]scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,boxblur=10:5[bgblur];"
-        "[fg]scale=-1:1400[fgfit];"
-        "[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,"
-        "setsar=1[base]"
+    width, height = get_video_dimensions(video_path)
+
+    aspect_ratio = width / height
+
+    print(
+        f"Source dimensions: {width}x{height} "
+        f"(aspect ratio: {aspect_ratio:.3f})"
     )
+
+    # A 9:16 source should fill the entire 1080x1920 canvas.
+    is_vertical = abs(aspect_ratio - (9 / 16)) < 0.08
+
+    if is_vertical:
+        print("Vertical source detected.")
+        print("Using full-frame 1080x1920 layout.")
+
+        video_filter = (
+            "[0:v]"
+            "scale=1080:1920:force_original_aspect_ratio=decrease,"
+            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2,"
+            "setsar=1"
+            "[base]"
+        )
+
+    else:
+        print("Non-vertical source detected.")
+        print("Using blurred-background vertical layout.")
+
+        video_filter = (
+            "[0:v]split=2[bg][fg];"
+            "[bg]"
+            "scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,"
+            "boxblur=10:5"
+            "[bgblur];"
+            "[fg]"
+            "scale=-1:1400"
+            "[fgfit];"
+            "[bgblur][fgfit]"
+            "overlay=(W-w)/2:(H-h)/2,"
+            "setsar=1"
+            "[base]"
+        )
 
     input_args = [
         "-i",
@@ -66,9 +132,15 @@ def make_clip(
             )
 
         video_filter += (
-            ";[1:v]scale=420:-1[logo];"
-            "[base][logo]overlay=(W-w)/2:70[branded];"
-            f"[branded]subtitles='{subtitle_filter_path}'[outv]"
+            ";[1:v]"
+            "scale=420:-1"
+            "[logo];"
+            "[base][logo]"
+            "overlay=(W-w)/2:70"
+            "[branded];"
+            f"[branded]"
+            f"subtitles='{subtitle_filter_path}'"
+            "[outv]"
         )
 
         input_args = [
@@ -82,7 +154,9 @@ def make_clip(
 
     else:
         video_filter += (
-            f";[base]subtitles='{subtitle_filter_path}'[outv]"
+            ";[base]"
+            f"subtitles='{subtitle_filter_path}'"
+            "[outv]"
         )
 
     command = [
@@ -144,7 +218,11 @@ def main():
                 f"Logo file not found: {logo_path}"
             )
 
-    for path in (video_path, moments_path, transcript_path):
+    for path in (
+        video_path,
+        moments_path,
+        transcript_path,
+    ):
         if not path.exists():
             raise FileNotFoundError(
                 f"File not found: {path}"
@@ -159,12 +237,13 @@ def main():
         print("No moments found.")
         sys.exit(1)
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
     print("Creating clips with synchronized captions.")
-    print("Audio normalization: loudnorm -14 LUFS / -1.5 dBTP")
-    print("Vertical format: 1080x1920")
-    print("Foreground height: 1400px")
+    print("Vertical output: 1080x1920")
 
     if logo_path:
         print(f"Campaign logo: {logo_path}")
@@ -180,10 +259,14 @@ def main():
         end = float(moment["end"])
 
         if end <= start:
-            print(f"Skipping invalid moment {index}")
+            print(
+                f"Skipping invalid moment {index}"
+            )
             continue
 
-        output_path = output_dir / f"clip_{index:02d}.mp4"
+        output_path = (
+            output_dir / f"clip_{index:02d}.mp4"
+        )
 
         print(
             f"Creating clip {index}: "
