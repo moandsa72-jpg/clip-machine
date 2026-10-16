@@ -126,16 +126,11 @@ def build_package(
 
 def main():
     if len(sys.argv) not in (4, 5):
-        print(
-                    sys.exit(
+        sys.exit(
             "Usage: python scripts/create_posting_packages.py "
             "<campaign_config.json> <clips_directory> "
             "<output_directory> [campaign_id]"
-                    )
-            
-            
         )
-        sys.exit(1)
 
     config_path = Path(sys.argv[1])
     default_clips_directory = Path(sys.argv[2])
@@ -145,7 +140,8 @@ def main():
         sys.argv[4]
         if len(sys.argv) == 5
         else None
-)
+    )
+
     if not config_path.is_file():
         sys.exit(
             f"Campaign config not found: {config_path}"
@@ -169,11 +165,12 @@ def main():
     generated = 0
 
     for campaign_id, campaign in campaigns.items():
-                if (
+        if (
             selected_campaign_id
             and campaign_id != selected_campaign_id
         ):
             continue
+
         if not isinstance(campaign, dict):
             print(
                 f"Skipping invalid campaign: {campaign_id}"
@@ -246,3 +243,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+        
