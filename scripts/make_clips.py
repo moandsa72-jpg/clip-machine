@@ -64,6 +64,7 @@ def make_clip(
     ])
 
     subtitle_filter_path = str(subtitle_path.resolve())
+
     subtitle_filter_path = (
         subtitle_filter_path
         .replace("\\", "\\\\")
@@ -83,25 +84,41 @@ def make_clip(
         f"(aspect ratio: {aspect_ratio:.3f})"
     )
 
-    # For landscape video, keep the complete source visible.
-    # Do NOT blur or crop the sides.
+    # ---------------------------------------------------------
+    # VERTICAL OUTPUT
+    # ---------------------------------------------------------
     #
-    # The 16:9 video is scaled to 1080 pixels wide and
-    # centered inside a clean 1080x1920 vertical canvas.
+    # The source remains clear and visible.
     #
-    # This prevents people from being cut off and prevents
-    # the image from being stretched or distorted.
-
-    if aspect_ratio < 1:
-        print("Vertical source detected.")
-    else:
-        print("Landscape source detected.")
-        print("Using clean 1080x1920 layout with no blur.")
+    # Instead of black space around a landscape source,
+    # create a blurred copy of the same video underneath it.
+    #
+    # This gives us a clean 1080x1920 vertical canvas while
+    # keeping the original video undistorted.
+    #
+    # ---------------------------------------------------------
 
     video_filter = (
         "[0:v]"
-        "scale=1080:-2,"
-        "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,"
+        "split=2[bg][fg];"
+
+        # Background:
+        # Fill the entire 1080x1920 canvas, then blur it.
+        "[bg]"
+        "scale=1080:1920:force_original_aspect_ratio=increase,"
+        "crop=1080:1920,"
+        "boxblur=20:10"
+        "[bgblur];"
+
+        # Foreground:
+        # Keep the complete landscape frame visible.
+        "[fg]"
+        "scale=1080:-2"
+        "[fgfit];"
+
+        # Put the clear video over the blurred background.
+        "[bgblur][fgfit]"
+        "overlay=(W-w)/2:(H-h)/2,"
         "setsar=1"
         "[base]"
     )
@@ -110,6 +127,10 @@ def make_clip(
         "-i",
         str(video_path),
     ]
+
+    # ---------------------------------------------------------
+    # REBEL AUDIO LOGO
+    # ---------------------------------------------------------
 
     if logo_path is not None:
         logo_path = Path(logo_path)
@@ -123,9 +144,11 @@ def make_clip(
             ";[1:v]"
             "scale=420:-1"
             "[logo];"
+
             "[base][logo]"
             "overlay=(W-w)/2:70"
             "[branded];"
+
             f"[branded]"
             f"subtitles='{subtitle_filter_path}'"
             "[outv]"
@@ -232,7 +255,8 @@ def main():
 
     print("Creating clips with synchronized captions.")
     print("Vertical output: 1080x1920")
-    print("Landscape sources: no blur, no cropping, no stretching.")
+    print("Background: blurred source video")
+    print("Foreground: clear source video")
 
     if logo_path:
         print(f"Campaign logo: {logo_path}")
