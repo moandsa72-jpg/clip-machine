@@ -151,13 +151,102 @@ jobs:
           set -euo pipefail
           echo "VIDEO_PATH=$LOCAL_VIDEO" >> "$GITHUB_ENV"
 
-      - name: Transcribe video
+      - name: Prepare video list
         run: |
           set -euo pipefail
 
-          python scripts/transcribe.py \
-            "$VIDEO_PATH" \
-            work/transcript.json
+          mkdir -p work/videos
+
+          if [ "${{ steps.source.outputs.source_type }}" = "drive_folder" ]; then
+            find work/drive_videos -type f \
+              \( -iname '*.mp4' -o -iname '*.mov' \
+              -o -iname '*.mkv' -o -iname '*.webm' \
+              -o -iname '*.m4v' \) \
+              -print0 > work/video_list
+
+          else
+            printf '%s\0' "$VIDEO_PATH" > work/video_list
+          fi
+
+          COUNT="$(tr -cd '\0' < work/video_list | wc -c)"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No videos available for processing."
+            exit 1
+          fi
+
+          echo "Videos to process: $COUNT"
+
+      - name: Process videos
+        env:
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
+        run: |
+          set -euo pipefail
+
+          INDEX=0
+
+          while IFS= read -r -d '' VIDEO; do
+            INDEX=$((INDEX + 1))
+
+            echo "======================================"
+            echo "Processing video $INDEX"
+            echo "Video: $VIDEO"
+            echo "======================================"
+
+            TRANSCRIPT="work/transcript_${INDEX}.json"
+            MOMENTS="work/moments_${INDEX}.json"
+
+            python scripts/transcribe.py \
+              "$VIDEO" \
+              "$TRANSCRIPT"
+
+            ffprobe -v error \
+              -show_entries format=duration \
+              -of default=noprint_wrappers=1:nokey=1 \
+              "$VIDEO"
+
+            python scripts/find_moments.py \
+              "$TRANSCRIPT" \
+              "$MOMENTS"
+
+            case "$CAMPAIGN_ID" in
+
+              blastoff_jingle_jared_rebel_audio)
+                OUTPUT_DIR="output/rebel_audio_clips/video_${INDEX}"
+                mkdir -p "$OUTPUT_DIR"
+
+                python scripts/make_clips.py \
+                  "$VIDEO" \
+                  "$MOMENTS" \
+                  "$OUTPUT_DIR" \
+                  "$TRANSCRIPT" \
+                  "rebel_audio_logo_transparent-1 (1).png"
+                ;;
+
+              blastoff_warren_zeiders_md_motivator)
+                OUTPUT_DIR="output/clips/video_${INDEX}"
+                mkdir -p "$OUTPUT_DIR"
+
+                python scripts/make_clips.py \
+                  "$VIDEO" \
+                  "$MOMENTS" \
+                  "$OUTPUT_DIR" \
+                  "$TRANSCRIPT"
+                ;;
+
+              *)
+                echo "Unsupported campaign: $CAMPAIGN_ID"
+                exit 1
+                ;;
+            esac
+
+            echo "Finished video $INDEX"
+
+          done < work/video_list
+
+          echo "======================================"
+          echo "ALL VIDEOS PROCESSED"
+          echo "======================================"
 
       - name: Verify video with FFprobe
         run: |
