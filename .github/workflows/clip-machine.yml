@@ -285,9 +285,9 @@ jobs:
         with:
           name: clip-machine-results
           path: |
-            output/clips/*.mp4
-            output/rebel_audio_clips/*.mp4
-            work/transcript.json
-            work/moments.json
+            output/clips/**/*.mp4
+            output/rebel_audio_clips/**/*.mp4
+            work/transcript_*.json
+            work/moments_*.json
           if-no-files-found: error
           retention-days: 7
