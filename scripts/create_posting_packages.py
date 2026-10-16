@@ -177,7 +177,7 @@ def main():
             )
             continue
 
-        clip_directory = resolve_clip_directory(
+                clip_directory = resolve_clip_directory(
             campaign,
             default_clips_directory
         )
@@ -188,16 +188,17 @@ def main():
                 f"{campaign_id}: {clip_directory}"
             )
 
-                clips = sorted(
+        clips = sorted(
             clip
             for clip in clip_directory.rglob("*.mp4")
             if clip.is_file()
-                )
-            
-            
-            
-            
         )
+
+        if not clips:
+            sys.exit(
+                f"No MP4 clips found for "
+                f"{campaign_id} in: {clip_directory}"
+            )
 
         if not clips:
             sys.exit(
