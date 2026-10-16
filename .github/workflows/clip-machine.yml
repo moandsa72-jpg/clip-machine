@@ -46,7 +46,10 @@ jobs:
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          python -m pip install faster-whisper
+          python -m pip install faster-whisper gdown
+        
+          
+          
 
       - name: Create working directories
         run: |
@@ -104,6 +107,7 @@ jobs:
 
           echo "VIDEO_PATH=work/source_video.mp4" >> "$GITHUB_ENV"
 
+
       - name: Download Google Drive folder
         if: steps.source.outputs.source_type == 'drive_folder'
         env:
@@ -113,22 +117,31 @@ jobs:
 
           mkdir -p work/drive_videos
 
-          python scripts/download_drive_folder.py \
-            "$VIDEO_URL" \
-            work/drive_videos
+          echo "Downloading public Google Drive folder..."
 
-          COUNT="$(find work/drive_videos -maxdepth 1 -type f \
+          python -m gdown \
+            "$VIDEO_URL" \
+            --folder \
+            --output work/drive_videos
+            
+            
+
+          echo "Downloaded files:"
+          find work/drive_videos -type f -print
+
+          COUNT="$(find work/drive_videos -type f \
             \( -iname '*.mp4' -o -iname '*.mov' \
             -o -iname '*.mkv' -o -iname '*.webm' \
             -o -iname '*.m4v' \) | wc -l)"
 
           if [ "$COUNT" -eq 0 ]; then
-            echo "No supported videos were found in the Drive folder."
+            echo "No supported videos were found in the Google Drive folder."
             exit 1
           fi
 
-          echo "Found $COUNT video(s) in Google Drive folder."
-          find work/drive_videos -maxdepth 1 -type f -print
+          echo "Found $COUNT video(s)."
+        
+
 
       - name: Set local video path
         if: steps.source.outputs.source_type == 'local'
