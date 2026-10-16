@@ -129,8 +129,9 @@ jobs:
 
           echo "Video source verified."
           
-          - name: Verify campaign assets
-          run: |
+
+      - name: Verify campaign assets
+        run: |
           set -euo pipefail
 
           echo "Current directory:"
@@ -140,21 +141,14 @@ jobs:
           ls -la
 
           echo "Assets directory:"
-          if [ -d "assets" ]; then
-            ls -la assets
-          else
-            echo "ERROR: assets directory does not exist."
-            exit 1
-          fi
+          ls -la assets
 
           echo "Checking Rebel Audio logo:"
-          if [ -f "assets/rebel_audio_logo.png" ]; then
-            echo "Logo FOUND."
-            ls -lh "assets/rebel_audio_logo.png"
-          else
-            echo "ERROR: Logo NOT FOUND."
-            exit 1
-          fi
+          test -f assets/rebel_audio_logo.png
+
+          echo "Logo FOUND."
+          ls -lh assets/rebel_audio_logo.png
+          
       - name: Find promising moments
         run: |
           set -euo pipefail
