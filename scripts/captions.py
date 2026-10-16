@@ -61,7 +61,7 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
             "Check work/transcript.json."
         )
 
-    # Short readable caption groups.
+    # Caption groups contain a maximum of 4 words.
     groups = []
     current = []
 
@@ -69,9 +69,8 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
         current.append(item)
 
         sentence_end = item["word"].endswith((".", "!", "?"))
-        group_full = len(current) >= 4
 
-        if sentence_end or group_full:
+        if sentence_end or len(current) == 4:
             groups.append(current)
             current = []
 
@@ -159,6 +158,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         file.write("\n")
 
     print("PRECISE WORD-SYNC CAPTIONS CREATED")
+    print("Maximum words per caption: 4")
     print(f"Words: {len(words)}")
     print(f"Caption groups: {len(groups)}")
     print(f"Caption events: {len(events)}")
@@ -179,4 +179,5 @@ if __name__ == "__main__":
         float(sys.argv[2]),
         float(sys.argv[3]),
         sys.argv[4],
-            )
+    )
+    
