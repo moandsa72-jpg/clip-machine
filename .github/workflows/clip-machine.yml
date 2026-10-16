@@ -128,7 +128,33 @@ jobs:
             "$VIDEO_PATH"
 
           echo "Video source verified."
+          
+          - name: Verify campaign assets
+          run: |
+          set -euo pipefail
 
+          echo "Current directory:"
+          pwd
+
+          echo "Repository files:"
+          ls -la
+
+          echo "Assets directory:"
+          if [ -d "assets" ]; then
+            ls -la assets
+          else
+            echo "ERROR: assets directory does not exist."
+            exit 1
+          fi
+
+          echo "Checking Rebel Audio logo:"
+          if [ -f "assets/rebel_audio_logo.png" ]; then
+            echo "Logo FOUND."
+            ls -lh "assets/rebel_audio_logo.png"
+          else
+            echo "ERROR: Logo NOT FOUND."
+            exit 1
+          fi
       - name: Find promising moments
         run: |
           set -euo pipefail
