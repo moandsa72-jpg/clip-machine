@@ -247,23 +247,7 @@ jobs:
           echo "======================================"
           echo "ALL VIDEOS PROCESSED"
           echo "======================================"
-
-      - name: Verify video with FFprobe
-        run: |
-          set -euo pipefail
-
-          if [ ! -f "$VIDEO_PATH" ]; then
-            echo "Video file not found: $VIDEO_PATH"
-            exit 1
-          fi
-
-          ffprobe -v error \
-            -show_entries format=duration \
-            -of default=noprint_wrappers=1:nokey=1 \
-            "$VIDEO_PATH"
-
-          echo "Video source verified."
-          
+  
 
       - name: Verify campaign assets
         run: |
@@ -276,61 +260,6 @@ jobs:
           ls -lh "rebel_audio_logo_transparent-1 (1).png"
           
           
-      - name: Find promising moments
-        run: |
-          set -euo pipefail
-
-          python scripts/find_moments.py \
-            work/transcript.json \
-            work/moments.json
-
-      - name: Create selected campaign clips
-        env:
-          CAMPAIGN_ID: ${{ inputs.campaign_id }}
-        run: |
-          set -euo pipefail
-
-          case "$CAMPAIGN_ID" in
-            blastoff_jingle_jared_rebel_audio)
-              OUTPUT_DIR="output/rebel_audio_clips"
-
-              python scripts/make_clips.py \
-                "$VIDEO_PATH" \
-                work/moments.json \
-                "$OUTPUT_DIR" \
-                work/transcript.json \
-                "rebel_audio_logo_transparent-1 (1).png"
-              ;;
-
-            blastoff_warren_zeiders_md_motivator)
-              OUTPUT_DIR="output/clips"
-
-              python scripts/make_clips.py \
-                "$VIDEO_PATH" \
-                work/moments.json \
-                "$OUTPUT_DIR" \
-                work/transcript.json
-              ;;
-
-            *)
-              echo "Unsupported campaign: $CAMPAIGN_ID"
-              exit 1
-              ;;
-          esac
-
-          COUNT="$(find "$OUTPUT_DIR" -maxdepth 1 \
-            -type f -name '*.mp4' | wc -l)"
-
-          if [ "$COUNT" -eq 0 ]; then
-            echo "No campaign clips were generated."
-            exit 1
-          fi
-
-          echo "Successfully generated $COUNT campaign clip(s)."
-          echo "Campaign: $CAMPAIGN_ID"
-          echo "Output: $OUTPUT_DIR"
-          ls -lh "$OUTPUT_DIR"
-
       - name: Generate selected campaign posting package
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
