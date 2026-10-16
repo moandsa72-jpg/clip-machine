@@ -188,11 +188,15 @@ def main():
                 f"{campaign_id}: {clip_directory}"
             )
 
-        clips = sorted(
+                clips = sorted(
             clip
-            for clip in clip_directory.iterdir()
+            for clip in clip_directory.rglob("*.mp4")
             if clip.is_file()
-            and clip.suffix.lower() == ".mp4"
+                )
+            
+            
+            
+            
         )
 
         if not clips:
