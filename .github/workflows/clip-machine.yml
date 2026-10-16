@@ -134,20 +134,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Current directory:"
-          pwd
-
-          echo "Repository files:"
-          ls -la
-
-          echo "Assets directory:"
-          ls -la assets
-
           echo "Checking Rebel Audio logo:"
-          test -f assets/rebel_audio_logo.png
+          test -f "rebel_audio_logo_transparent-1 (1).png"
 
           echo "Logo FOUND."
-          ls -lh assets/rebel_audio_logo.png
+          ls -lh "rebel_audio_logo_transparent-1 (1).png"
+          
           
       - name: Find promising moments
         run: |
@@ -172,7 +164,7 @@ jobs:
                 work/moments.json \
                 "$OUTPUT_DIR" \
                 work/transcript.json \
-                assets/rebel_audio_logo.png
+                "rebel_audio_logo_transparent-1 (1).png"
               ;;
 
             blastoff_warren_zeiders_md_motivator)
