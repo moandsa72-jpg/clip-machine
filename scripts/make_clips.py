@@ -105,8 +105,6 @@ def make_clip(
         "veryfast",
         "-crf",
         "20",
-        "-af",
-        "loudnorm=I=-14:TP=-1.5:LRA=11",
         "-c:a",
         "aac",
         "-b:a",
