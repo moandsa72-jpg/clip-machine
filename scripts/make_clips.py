@@ -83,40 +83,28 @@ def make_clip(
         f"(aspect ratio: {aspect_ratio:.3f})"
     )
 
-    # A 9:16 source should fill the entire 1080x1920 canvas.
-    is_vertical = abs(aspect_ratio - (9 / 16)) < 0.08
+    # For landscape video, keep the complete source visible.
+    # Do NOT blur or crop the sides.
+    #
+    # The 16:9 video is scaled to 1080 pixels wide and
+    # centered inside a clean 1080x1920 vertical canvas.
+    #
+    # This prevents people from being cut off and prevents
+    # the image from being stretched or distorted.
 
-    if is_vertical:
+    if aspect_ratio < 1:
         print("Vertical source detected.")
-        print("Using full-frame 1080x1920 layout.")
-
-        video_filter = (
-            "[0:v]"
-            "scale=1080:1920:force_original_aspect_ratio=decrease,"
-            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2,"
-            "setsar=1"
-            "[base]"
-        )
-
     else:
-        print("Non-vertical source detected.")
-        print("Using blurred-background vertical layout.")
+        print("Landscape source detected.")
+        print("Using clean 1080x1920 layout with no blur.")
 
-        video_filter = (
-            "[0:v]split=2[bg][fg];"
-            "[bg]"
-            "scale=1080:1920:force_original_aspect_ratio=increase,"
-            "crop=1080:1920,"
-            "boxblur=10:5"
-            "[bgblur];"
-            "[fg]"
-            "scale=-1:1400"
-            "[fgfit];"
-            "[bgblur][fgfit]"
-            "overlay=(W-w)/2:(H-h)/2,"
-            "setsar=1"
-            "[base]"
-        )
+    video_filter = (
+        "[0:v]"
+        "scale=1080:-2,"
+        "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color=black,"
+        "setsar=1"
+        "[base]"
+    )
 
     input_args = [
         "-i",
@@ -244,6 +232,7 @@ def main():
 
     print("Creating clips with synchronized captions.")
     print("Vertical output: 1080x1920")
+    print("Landscape sources: no blur, no cropping, no stretching.")
 
     if logo_path:
         print(f"Campaign logo: {logo_path}")
@@ -293,3 +282,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
