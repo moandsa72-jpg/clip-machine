@@ -105,9 +105,10 @@ def make_clip(
         # Background:
         # Fill the entire 1080x1920 canvas, then blur it.
         "[bg]"
-        "scale=1080:1920:force_original_aspect_ratio=increase,"
-        "crop=1080:1920,"
-        "boxblur=20:10"
+        "scale=270:480:force_original_aspect_ratio=increase,"
+        "crop=270:480,"
+        "boxblur=6:3,"
+        "scale=1080:1920"
         "[bgblur];"
 
         # Foreground:
