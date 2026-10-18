@@ -174,6 +174,7 @@ def make_clip(
     command = [
         "ffmpeg",
         "-y",
+        "-nostdin",
         "-ss",
         str(start),
         *input_args,
