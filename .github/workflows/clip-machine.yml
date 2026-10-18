@@ -209,12 +209,7 @@ jobs:
 
             python scripts/find_moments.py \
               "$TRANSCRIPT" \
-              "$MOMENTS"
-            FACE_DATA="work/faces_${INDEX}.json"
-
-            python scripts/face_tracking.py \
-              "$VIDEO" \
-              "$FACE_DATA"
+              "$MOMENTS"          
 
             case "$CAMPAIGN_ID" in
 
