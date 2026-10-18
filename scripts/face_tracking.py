@@ -16,9 +16,19 @@ def detect_faces(video_path):
     if not fps or fps <= 0:
         fps = 30.0
 
-    detector = cv2.CascadeClassifier(
-        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    face_cascade_path = (
+        Path(cv2.data.haarcascades)
+        / "haarcascade_frontalface_default.xml"
     )
+
+    detector = cv2.CascadeClassifier(
+        str(face_cascade_path)
+    )
+
+    if detector.empty():
+        raise RuntimeError(
+            f"Could not load face detector: {face_cascade_path}"
+        )
 
     samples = []
     frame_number = 0
@@ -31,11 +41,13 @@ def detect_faces(video_path):
 
         frame_number += 1
 
-        # Analyze approximately every 10th frame.
         if frame_number % 10 != 0:
             continue
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(
+            frame,
+            cv2.COLOR_BGR2GRAY
+        )
 
         faces = detector.detectMultiScale(
             gray,
@@ -58,7 +70,10 @@ def detect_faces(video_path):
 
         samples.append(
             {
-                "time": round(frame_number / fps, 3),
+                "time": round(
+                    frame_number / fps,
+                    3
+                ),
                 "faces": frame_faces,
             }
         )
@@ -91,14 +106,18 @@ def main():
 
     output_path.parent.mkdir(
         parents=True,
-        exist_ok=True,
+        exist_ok=True
     )
 
-    with open(output_path, "w", encoding="utf-8") as file:
+    with open(
+        output_path,
+        "w",
+        encoding="utf-8"
+    ) as file:
         json.dump(
             result,
             file,
-            indent=2,
+            indent=2
         )
 
     print(
