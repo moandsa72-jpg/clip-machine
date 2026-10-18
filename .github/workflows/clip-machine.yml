@@ -45,7 +45,7 @@ jobs:
 
       - name: Install Python packages
         run: |
-              python -m pip install faster-whisper gdown mediapipe
+              python -m pip install faster-whisper gdown 
           
       - name: Diagnose OpenCV
         run: |
