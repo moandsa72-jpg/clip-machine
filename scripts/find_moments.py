@@ -945,126 +945,7 @@ def score_candidate(
     # STANDALONE
     # --------------------------------------------------------
 
-    standalone_score = (
-        calculate_standalone_score(
-            text
-        )
-    )
-
-    if standalone_score < 0:
-        penalty += abs(
-            standalone_score
-        )
-
-        rejection_flags.append(
-            "weak_context"
-        )
-
-    # --------------------------------------------------------
-    # STRUCTURE
-    # --------------------------------------------------------
-
-    structure_score = calculate_structure(
-        text
-    )
-
-    payoff_score = calculate_payoff_score(
-        text
-    )
-
-    # --------------------------------------------------------
-    # ENDING
-    # --------------------------------------------------------
-
-    ending_words = words[-10:]
-
-    ending_strong = sum(
-        1
-        for word in ending_words
-        if word in STRONG_WORDS
-    )
-
-    ending_hook = sum(
-        1
-        for word in ending_words
-        if word in HOOK_WORDS
-    )
-
-    ending_score += min(
-        ending_strong * 2,
-        6
-    )
-
-    ending_score += min(
-        ending_hook * 1.5,
-        5
-    )
-
-    # A completed sentence is important.
-    if complete_thought:
-        ending_score += 3
-
-    # --------------------------------------------------------
-    # REPETITION
-    # --------------------------------------------------------
-
-    unique_ratio = (
-        len(set(words))
-        / max(
-            len(words),
-            1
-        )
-    )
-
-    if unique_ratio < 0.40:
-        penalty += 7
-        rejection_flags.append(
-            "heavy_repetition"
-        )
-
-    elif unique_ratio < 0.50:
-        penalty += 4
-
-    # --------------------------------------------------------
-    # FILLER
-    # --------------------------------------------------------
-
-    filler_hits = sum(
-        1
-        for word in words
-        if word in FILLER_WORDS
-    )
-
-    if word_count >= 15:
-
-        filler_ratio = (
-            filler_hits
-            / word_count
-        )
-
-        if filler_ratio > 0.12:
-            penalty += 6
             rejection_flags.append(
-                "heavy_filler"
-            )
-
-        elif filler_ratio > 0.08:
-            penalty += 3
-
-    # --------------------------------------------------------
-    # EXCESSIVE SHORT SENTENCES
-    # --------------------------------------------------------
-
-    sentences = sentence_count(
-        text
-    )
-
-    if (
-        word_count >= 30
-        and sentences >= 8
-    ):
-        penalty += 4
-        rejection_flags.append(
             "fragmented_delivery"
         )
 
@@ -1213,7 +1094,7 @@ def passes_quality_gate(scores):
         return False, "bad_boundaries"
 
     # A clip must have enough actual quality.
-    if scores["quality_score"] < 12:
+    if scores["quality_score"] < 25:
         return False, "low_quality"
 
     # Avoid clips that are almost entirely curiosity
