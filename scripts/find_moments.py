@@ -942,22 +942,22 @@ def score_candidate(
         )
         
 # --------------------------------------------------------
-# STANDALONE
+           # STANDALONE
 # --------------------------------------------------------
 
-standalone_score = (
-    calculate_standalone_score(
-        text
+    standalone_score = (
+        calculate_standalone_score(
+            text
     )
 )
 
-if standalone_score < 0:
-    penalty += abs(
+    if standalone_score < 0:
+        penalty += abs(
         standalone_score
     )
 
-    rejection_flags.append(
-        "weak_context"
+        rejection_flags.append(
+            "weak_context"
     )
 
     # --------------------------------------------------------
