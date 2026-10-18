@@ -45,8 +45,8 @@ jobs:
 
       - name: Install Python packages
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install faster-whisper gdown
+               python -m pip install faster-whisper gdown opencv-python-headless
+          
         
           
           
