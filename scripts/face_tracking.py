@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import cv2
+import mediapipe as mp
 
 
 def detect_faces(video_path):
@@ -16,67 +17,79 @@ def detect_faces(video_path):
     if not fps or fps <= 0:
         fps = 30.0
 
-    face_cascade_path = (
-        Path(cv2.data.haarcascades)
-        / "haarcascade_frontalface_default.xml"
-    )
-
-    detector = cv2.CascadeClassifier(
-        str(face_cascade_path)
-    )
-
-    if detector.empty():
-        raise RuntimeError(
-            f"Could not load face detector: {face_cascade_path}"
-        )
+    mp_face_detection = mp.solutions.face_detection
 
     samples = []
+
     frame_number = 0
 
-    while True:
-        success, frame = video.read()
+    with mp_face_detection.FaceDetection(
+        model_selection=1,
+        min_detection_confidence=0.5,
+    ) as detector:
 
-        if not success:
-            break
+        while True:
+            success, frame = video.read()
 
-        frame_number += 1
+            if not success:
+                break
 
-        if frame_number % 10 != 0:
-            continue
+            frame_number += 1
 
-        gray = cv2.cvtColor(
-            frame,
-            cv2.COLOR_BGR2GRAY
-        )
+            if frame_number % 10 != 0:
+                continue
 
-        faces = detector.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(60, 60),
-        )
-
-        frame_faces = []
-
-        for x, y, width, height in faces:
-            frame_faces.append(
-                {
-                    "x": int(x),
-                    "y": int(y),
-                    "width": int(width),
-                    "height": int(height),
-                }
+            rgb = cv2.cvtColor(
+                frame,
+                cv2.COLOR_BGR2RGB
             )
 
-        samples.append(
-            {
-                "time": round(
-                    frame_number / fps,
-                    3
-                ),
-                "faces": frame_faces,
-            }
-        )
+            results = detector.process(rgb)
+
+            frame_faces = []
+
+            if results.detections:
+                frame_height, frame_width = frame.shape[:2]
+
+                for detection in results.detections:
+                    box = detection.location_data.relative_bounding_box
+
+                    x = max(
+                        0,
+                        int(box.xmin * frame_width)
+                    )
+
+                    y = max(
+                        0,
+                        int(box.ymin * frame_height)
+                    )
+
+                    width = int(
+                        box.width * frame_width
+                    )
+
+                    height = int(
+                        box.height * frame_height
+                    )
+
+                    frame_faces.append(
+                        {
+                            "x": x,
+                            "y": y,
+                            "width": width,
+                            "height": height,
+                        }
+                    )
+
+            samples.append(
+                {
+                    "time": round(
+                        frame_number / fps,
+                        3
+                    ),
+                    "faces": frame_faces,
+                }
+            )
 
     video.release()
 
