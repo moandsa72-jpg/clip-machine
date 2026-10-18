@@ -940,14 +940,25 @@ def score_candidate(
         rejection_flags.append(
             "unnatural_start"
         )
+        
+# --------------------------------------------------------
+# STANDALONE
+# --------------------------------------------------------
 
-    # --------------------------------------------------------
-    # STANDALONE
-    # --------------------------------------------------------
+standalone_score = (
+    calculate_standalone_score(
+        text
+    )
+)
 
-            rejection_flags.append(
-            "fragmented_delivery"
-        )
+if standalone_score < 0:
+    penalty += abs(
+        standalone_score
+    )
+
+    rejection_flags.append(
+        "weak_context"
+    )
 
     # --------------------------------------------------------
     # SOCIAL / HOUSEKEEPING CONTENT
@@ -1094,8 +1105,8 @@ def passes_quality_gate(scores):
         return False, "bad_boundaries"
 
     # A clip must have enough actual quality.
-    if scores["quality_score"] < 25:
-        return False, "low_quality"
+    if scores["quality_score"] < 25:        
+       return False, "low_quality"
 
     # Avoid clips that are almost entirely curiosity
     # vocabulary without supporting information.
