@@ -225,29 +225,39 @@ def main():
     content_type_path = None
 
     if len(sys.argv) == 6:
-        # Existing behavior: sixth argument is the logo.
-        logo_path = Path(sys.argv[5])
+    # Sixth argument can be either a logo or content profile.
+    argument_path = Path(sys.argv[5])
 
-        if not logo_path.exists():
-            raise FileNotFoundError(
-                f"Logo file not found: {logo_path}"
-            )
-
-    elif len(sys.argv) == 7:
-        # Sixth argument is the logo.
-        # Seventh argument is the content profile.
-        logo_path = Path(sys.argv[5])
-        content_type_path = Path(sys.argv[6])
-
-        if not logo_path.exists():
-            raise FileNotFoundError(
-                f"Logo file not found: {logo_path}"
-            )
+    if argument_path.suffix.lower() == ".json":
+        content_type_path = argument_path
 
         if not content_type_path.exists():
             raise FileNotFoundError(
                 f"Content type file not found: {content_type_path}"
             )
+    else:
+        logo_path = argument_path
+
+        if not logo_path.exists():
+            raise FileNotFoundError(
+                f"Logo file not found: {logo_path}"
+            )
+
+elif len(sys.argv) == 7:
+    # Sixth argument is the logo.
+    # Seventh argument is the content profile.
+    logo_path = Path(sys.argv[5])
+    content_type_path = Path(sys.argv[6])
+
+    if not logo_path.exists():
+        raise FileNotFoundError(
+            f"Logo file not found: {logo_path}"
+        )
+
+    if not content_type_path.exists():
+        raise FileNotFoundError(
+            f"Content type file not found: {content_type_path}"
+        )
 
     for path in (
         video_path,
