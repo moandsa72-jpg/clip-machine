@@ -208,11 +208,11 @@ def make_clip(
 
 
 def main():
-    if len(sys.argv) not in (5, 6):
+    if len(sys.argv) not in (5, 6, 7):
         print(
             "Usage: python scripts/make_clips.py "
             "<video> <moments.json> <output_dir> "
-            "<transcript.json> [logo.png]"
+            "<transcript.json> [logo.png] [content_type.json]"
         )
         sys.exit(1)
 
@@ -222,13 +222,31 @@ def main():
     transcript_path = Path(sys.argv[4])
 
     logo_path = None
+    content_type_path = None
 
     if len(sys.argv) == 6:
+        # Existing behavior: sixth argument is the logo.
         logo_path = Path(sys.argv[5])
 
         if not logo_path.exists():
             raise FileNotFoundError(
                 f"Logo file not found: {logo_path}"
+            )
+
+    elif len(sys.argv) == 7:
+        # Sixth argument is the logo.
+        # Seventh argument is the content profile.
+        logo_path = Path(sys.argv[5])
+        content_type_path = Path(sys.argv[6])
+
+        if not logo_path.exists():
+            raise FileNotFoundError(
+                f"Logo file not found: {logo_path}"
+            )
+
+        if not content_type_path.exists():
+            raise FileNotFoundError(
+                f"Content type file not found: {content_type_path}"
             )
 
     for path in (
@@ -240,6 +258,19 @@ def main():
             raise FileNotFoundError(
                 f"File not found: {path}"
             )
+
+    if content_type_path:
+        with open(
+            content_type_path,
+            "r",
+            encoding="utf-8"
+        ) as file:
+            content_type = json.load(file)
+
+        print(
+            f"Content type: "
+            f"{content_type.get('content_type', 'general')}"
+        )
 
     with open(moments_path, "r", encoding="utf-8") as file:
         data = json.load(file)
@@ -308,4 +339,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
