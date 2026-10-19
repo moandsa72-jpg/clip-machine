@@ -221,8 +221,8 @@ jobs:
                   "$MOMENTS" \
                   "$OUTPUT_DIR" \
                   "$TRANSCRIPT" \
-                  "rebel_audio_logo_transparent-1 (1).png"
-                ;;
+                  "rebel_audio_logo_transparent-1 (1).png" \
+                  "work/content_type_${INDEX}.json"
 
               blastoff_warren_zeiders_md_motivator)
                 OUTPUT_DIR="output/clips/video_${INDEX}"
@@ -232,8 +232,8 @@ jobs:
                   "$VIDEO" \
                   "$MOMENTS" \
                   "$OUTPUT_DIR" \
-                  "$TRANSCRIPT"
-                ;;
+                  "$TRANSCRIPT" \
+                  "work/content_type_${INDEX}.json"
 
               *)
                 echo "Unsupported campaign: $CAMPAIGN_ID"
