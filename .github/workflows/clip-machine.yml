@@ -210,7 +210,7 @@ jobs:
               "$TRANSCRIPT" \
               "$MOMENTS"          
 
-            case "$CAMPAIGN_ID" in
+                        case "$CAMPAIGN_ID" in
 
               blastoff_jingle_jared_rebel_audio)
                 OUTPUT_DIR="output/rebel_audio_clips/video_${INDEX}"
@@ -223,6 +223,7 @@ jobs:
                   "$TRANSCRIPT" \
                   "rebel_audio_logo_transparent-1 (1).png" \
                   "work/content_type_${INDEX}.json"
+                ;;
 
               blastoff_warren_zeiders_md_motivator)
                 OUTPUT_DIR="output/clips/video_${INDEX}"
@@ -234,6 +235,7 @@ jobs:
                   "$OUTPUT_DIR" \
                   "$TRANSCRIPT" \
                   "work/content_type_${INDEX}.json"
+                ;;
 
               *)
                 echo "Unsupported campaign: $CAMPAIGN_ID"
