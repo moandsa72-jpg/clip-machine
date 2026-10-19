@@ -197,10 +197,11 @@ jobs:
               "$VIDEO" \
               "$TRANSCRIPT"
 
+            python scripts/content_detector.py \
+              "$TRANSCRIPT" \
+              "work/content_type_${INDEX}.json"
+
             ffprobe -v error \
-              -show_entries format=duration \
-              -of default=noprint_wrappers=1:nokey=1 \
-              "$VIDEO"
 
             python scripts/find_moments.py \
               "$TRANSCRIPT" \
