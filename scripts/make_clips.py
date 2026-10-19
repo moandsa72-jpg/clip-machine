@@ -84,40 +84,18 @@ def make_clip(
         f"(aspect ratio: {aspect_ratio:.3f})"
     )
 
-    # ---------------------------------------------------------
-    # VERTICAL OUTPUT
-    # ---------------------------------------------------------
-    #
-    # The source remains clear and visible.
-    #
-    # Instead of black space around a landscape source,
-    # create a blurred copy of the same video underneath it.
-    #
-    # This gives us a clean 1080x1920 vertical canvas while
-    # keeping the original video undistorted.
-    #
-    # ---------------------------------------------------------
-
     video_filter = (
         "[0:v]"
         "split=2[bg][fg];"
-
-        # Background:
-        # Fill the entire 1080x1920 canvas, then blur it.
         "[bg]"
         "scale=270:480:force_original_aspect_ratio=increase,"
         "crop=270:480,"
         "boxblur=6:3,"
         "scale=1080:1920"
         "[bgblur];"
-
-        # Foreground:
-        # Keep the complete landscape frame visible.
         "[fg]"
         "scale=1080:-2"
         "[fgfit];"
-
-        # Put the clear video over the blurred background.
         "[bgblur][fgfit]"
         "overlay=(W-w)/2:(H-h)/2,"
         "setsar=1"
@@ -128,10 +106,6 @@ def make_clip(
         "-i",
         str(video_path),
     ]
-
-    # ---------------------------------------------------------
-    # REBEL AUDIO LOGO
-    # ---------------------------------------------------------
 
     if logo_path is not None:
         logo_path = Path(logo_path)
@@ -145,11 +119,9 @@ def make_clip(
             ";[1:v]"
             "scale=420:-1"
             "[logo];"
-
             "[base][logo]"
             "overlay=(W-w)/2:70"
             "[branded];"
-
             f"[branded]"
             f"subtitles='{subtitle_filter_path}'"
             "[outv]"
@@ -225,39 +197,36 @@ def main():
     content_type_path = None
 
     if len(sys.argv) == 6:
-    # Sixth argument can be either a logo or content profile.
-    argument_path = Path(sys.argv[5])
+        argument_path = Path(sys.argv[5])
 
-    if argument_path.suffix.lower() == ".json":
-        content_type_path = argument_path
+        if argument_path.suffix.lower() == ".json":
+            content_type_path = argument_path
 
-        if not content_type_path.exists():
-            raise FileNotFoundError(
-                f"Content type file not found: {content_type_path}"
-            )
-    else:
-        logo_path = argument_path
+            if not content_type_path.exists():
+                raise FileNotFoundError(
+                    f"Content type file not found: {content_type_path}"
+                )
+        else:
+            logo_path = argument_path
+
+            if not logo_path.exists():
+                raise FileNotFoundError(
+                    f"Logo file not found: {logo_path}"
+                )
+
+    elif len(sys.argv) == 7:
+        logo_path = Path(sys.argv[5])
+        content_type_path = Path(sys.argv[6])
 
         if not logo_path.exists():
             raise FileNotFoundError(
                 f"Logo file not found: {logo_path}"
             )
 
-elif len(sys.argv) == 7:
-    # Sixth argument is the logo.
-    # Seventh argument is the content profile.
-    logo_path = Path(sys.argv[5])
-    content_type_path = Path(sys.argv[6])
-
-    if not logo_path.exists():
-        raise FileNotFoundError(
-            f"Logo file not found: {logo_path}"
-        )
-
-    if not content_type_path.exists():
-        raise FileNotFoundError(
-            f"Content type file not found: {content_type_path}"
-        )
+        if not content_type_path.exists():
+            raise FileNotFoundError(
+                f"Content type file not found: {content_type_path}"
+            )
 
     for path in (
         video_path,
