@@ -178,7 +178,7 @@ jobs:
 
           INDEX=0
 
-          while IFS= read -r -d '' VIDEO; do
+          while IFS= read -r VIDEO; do
             INDEX=$((INDEX + 1))
 
             echo "======================================"
