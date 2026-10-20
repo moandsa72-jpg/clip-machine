@@ -1106,7 +1106,7 @@ def passes_quality_gate(scores):
 
     # A clip must have enough actual quality.
     if scores["quality_score"] < 18:        
-       return False, "low_quality"
+        return False, "low_quality"
 
     # Avoid clips that are almost entirely curiosity
     # vocabulary without supporting information.
