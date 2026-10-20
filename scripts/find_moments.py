@@ -928,7 +928,6 @@ def score_candidate(
     if complete_thought:
         boundary_score += 6
     else:
-        penalty += 7
         rejection_flags.append(
             "incomplete_thought"
         )
