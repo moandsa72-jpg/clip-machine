@@ -1241,7 +1241,9 @@ def build_windows(
                         "rejection_flags"
                     ],
                 })
+print(f"REJECTED {candidate['start']:.2f}-{candidate['end']:.2f}: {reason} | flags={candidate['rejection_flags']} | quality={candidate['quality_score']}")
 
+    
     return windows, rejected
 
 
