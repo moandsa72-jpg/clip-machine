@@ -1230,7 +1230,7 @@ def build_windows(
                     candidate
                 )
 
-                        else:
+            else:
 
                 rejected.append({
                     "start": candidate["start"],
