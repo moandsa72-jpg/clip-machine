@@ -244,6 +244,11 @@ jobs:
           done < work/video_list
 
           echo "======================================"
+          echo "CHECKING GENERATED CLIPS"
+          find output/rebel_audio_clips -type f -name "*.mp4" -print || true
+          echo "======================================"
+          
+          echo "======================================"
           echo "ALL VIDEOS PROCESSED"
           echo "======================================"
   
