@@ -1105,7 +1105,7 @@ def passes_quality_gate(scores):
         return False, "bad_boundaries"
 
     # A clip must have enough actual quality.
-    if scores["quality_score"] < 25:        
+    if scores["quality_score"] < 18:        
        return False, "low_quality"
 
     # Avoid clips that are almost entirely curiosity
