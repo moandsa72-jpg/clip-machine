@@ -154,23 +154,21 @@ jobs:
 
           mkdir -p work/videos
 
-          if [ "${{ steps.source.outputs.source_type }}" = "drive_folder" ]; then
-            find work/drive_videos -type f \
-              \( -iname '*.mp4' -o -iname '*.mov' \
-              -o -iname '*.mkv' -o -iname '*.webm' \
-              -o -iname '*.m4v' \) \
-              -print0 > work/video_list
+          find input -maxdepth 1 -type f \( \
+           -iname "*.mp4" -o \
+           -iname "*.mov" -o \
+           -iname "*.mkv" -o \
+           -iname "*.webm" \
+          \) | sort > work/video_list
 
-          else
-            printf '%s\0' "$VIDEO_PATH" > work/video_list
-          fi
+          VIDEO_COUNT=$(wc -l < work/video_list)
 
-          COUNT="$(tr -cd '\0' < work/video_list | wc -c)"
+          echo "Videos to process: $VIDEO_COUNT"
 
-          if [ "$COUNT" -eq 0 ]; then
-            echo "No videos available for processing."
+          if [ "$VIDEO_COUNT" -eq 0 ]; then
+            echo "No videos found in input/"
             exit 1
-          fi
+           fi
 
           echo "Videos to process: $COUNT"
 
