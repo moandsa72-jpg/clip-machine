@@ -170,8 +170,6 @@ jobs:
             exit 1
            fi
 
-          echo "Videos to process: $COUNT"
-
       - name: Process videos
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
