@@ -265,12 +265,19 @@ jobs:
         run: |
           set -euo pipefail
 
+          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
+            POSTING_CLIPS_DIR="output/rebel_audio_clips"
+          else
+            POSTING_CLIPS_DIR="output/clips"
+          fi
+
           python scripts/create_posting_packages.py \
             campaigns/config.json \
-            output/clips \
+            "$POSTING_CLIPS_DIR" \
             output/posting_packages \
             "$CAMPAIGN_ID"
 
+          
       - name: Upload selected campaign posting package
         uses: actions/upload-artifact@v4
         with:
