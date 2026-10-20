@@ -1230,7 +1230,7 @@ def build_windows(
                     candidate
                 )
 
-            else:
+                        else:
 
                 rejected.append({
                     "start": candidate["start"],
@@ -1241,11 +1241,16 @@ def build_windows(
                         "rejection_flags"
                     ],
                 })
-print(f"REJECTED {candidate['start']:.2f}-{candidate['end']:.2f}: {reason} | flags={candidate['rejection_flags']} | quality={candidate['quality_score']}")
 
-    
+                print(
+                    f"REJECTED "
+                    f"{candidate['start']:.2f}-{candidate['end']:.2f}: "
+                    f"{reason} | "
+                    f"flags={candidate['rejection_flags']} | "
+                    f"quality={candidate['quality_score']}"
+                )
+
     return windows, rejected
-
 
 # ============================================================
 # OVERLAP
