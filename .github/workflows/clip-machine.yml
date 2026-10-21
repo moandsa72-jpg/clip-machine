@@ -148,27 +148,59 @@ jobs:
           set -euo pipefail
           echo "VIDEO_PATH=$LOCAL_VIDEO" >> "$GITHUB_ENV"
 
-      - name: Prepare video list
-        run: |
+      
+             - name: Prepare video list
+               env:
+          SOURCE_TYPE: ${{ steps.source.outputs.source_type }}
+         run: |
           set -euo pipefail
 
           mkdir -p work/videos
+          : > work/video_list
 
-          find input -maxdepth 1 -type f \( \
-           -iname "*.mp4" -o \
-           -iname "*.mov" -o \
-           -iname "*.mkv" -o \
-           -iname "*.webm" \
-          \) | sort > work/video_list
+          case "$SOURCE_TYPE" in
+            local)
+              find input -maxdepth 1 -type f \( \
+                -iname "*.mp4" -o \
+                -iname "*.mov" -o \
+                -iname "*.mkv" -o \
+                -iname "*.webm" -o \
+                -iname "*.m4v" \
+              \) -print >> work/video_list
+              ;;
+            url)
+              if [ -s "work/source_video.mp4" ]; then
+                echo "work/source_video.mp4" >> work/video_list
+              fi
+              ;;
+            drive_folder)
+              if [ -d "work/drive_videos" ]; then
+                find work/drive_videos -type f \( \
+                  -iname "*.mp4" -o \
+                  -iname "*.mov" -o \
+                  -iname "*.mkv" -o \
+                  -iname "*.webm" -o \
+                  -iname "*.m4v" \
+                \) -print >> work/video_list
+              fi
+              ;;
+            *)
+              echo "Unsupported video source: $SOURCE_TYPE"
+              exit 1
+              ;;
+          esac
 
-          VIDEO_COUNT=$(wc -l < work/video_list)
+          sort -u -o work/video_list work/video_list
+          VIDEO_COUNT=$(wc -l < work/video_list | tr -d ' ')
 
           echo "Videos to process: $VIDEO_COUNT"
+          cat work/video_list
 
           if [ "$VIDEO_COUNT" -eq 0 ]; then
-            echo "No videos found in input/"
+            echo "No supported videos found for the selected source."
             exit 1
-           fi
+          fi 
+           
 
       - name: Process videos
         env:
