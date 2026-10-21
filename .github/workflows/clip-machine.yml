@@ -12,7 +12,7 @@ on:
           - blastoff_warren_zeiders_md_motivator
 
       video_url:
-        description: "Direct HTTPS video URL (leave empty to use input/)"
+        description: "Direct HTTPS video URL or public Google Drive folder URL (leave empty to use input/)"
         required: false
         type: string
 
@@ -45,8 +45,8 @@ jobs:
 
       - name: Install Python packages
         run: |
-              python -m pip install faster-whisper gdown   
-          
+          python -m pip install --upgrade pip
+          python -m pip install faster-whisper gdown
 
       - name: Create working directories
         run: |
@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
 
-                    if [ -n "$VIDEO_URL" ]; then
+          if [ -n "$VIDEO_URL" ]; then
             if [[ "$VIDEO_URL" == *"drive.google.com/drive/folders/"* ]]; then
               echo "source_type=drive_folder" >> "$GITHUB_OUTPUT"
               echo "Google Drive folder detected."
@@ -72,13 +72,12 @@ jobs:
               echo "source_type=url" >> "$GITHUB_OUTPUT"
               echo "Single video URL detected."
             fi
-            
           else
             VIDEO_FILE="$(find input -maxdepth 1 -type f \
               \( -iname '*.mp4' -o -iname '*.mov' \
               -o -iname '*.mkv' -o -iname '*.webm' \
               -o -iname '*.m4v' \) \
-              ! -name '.gitkeep' | head -n 1)"
+              ! -name '.gitkeep' | sort | head -n 1)"
 
             if [ -z "$VIDEO_FILE" ]; then
               echo "No video URL or local video was provided."
@@ -104,7 +103,6 @@ jobs:
 
           echo "VIDEO_PATH=work/source_video.mp4" >> "$GITHUB_ENV"
 
-
       - name: Download Google Drive folder
         if: steps.source.outputs.source_type == 'drive_folder'
         env:
@@ -120,8 +118,6 @@ jobs:
             "$VIDEO_URL" \
             --folder \
             --output work/drive_videos
-            
-            
 
           echo "Downloaded files:"
           find work/drive_videos -type f -print
@@ -137,8 +133,6 @@ jobs:
           fi
 
           echo "Found $COUNT video(s)."
-        
-
 
       - name: Set local video path
         if: steps.source.outputs.source_type == 'local'
@@ -148,11 +142,11 @@ jobs:
           set -euo pipefail
           echo "VIDEO_PATH=$LOCAL_VIDEO" >> "$GITHUB_ENV"
 
-      
-             - name: Prepare video list
-               env:
+      - name: Prepare video list
+        env:
           SOURCE_TYPE: ${{ steps.source.outputs.source_type }}
-         run: |
+        shell: bash
+        run: |
           set -euo pipefail
 
           mkdir -p work/videos
@@ -199,12 +193,12 @@ jobs:
           if [ "$VIDEO_COUNT" -eq 0 ]; then
             echo "No supported videos found for the selected source."
             exit 1
-          fi 
-           
+          fi
 
       - name: Process videos
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -236,10 +230,9 @@ jobs:
 
             python scripts/find_moments.py \
               "$TRANSCRIPT" \
-              "$MOMENTS"          
+              "$MOMENTS"
 
-                        case "$CAMPAIGN_ID" in
-
+            case "$CAMPAIGN_ID" in
               blastoff_jingle_jared_rebel_audio)
                 OUTPUT_DIR="output/rebel_audio_clips/video_${INDEX}"
                 mkdir -p "$OUTPUT_DIR"
@@ -277,25 +270,27 @@ jobs:
 
           echo "======================================"
           echo "CHECKING GENERATED CLIPS"
-          find output/rebel_audio_clips -type f -name "*.mp4" -print || true
-          echo "======================================"
-          
+          find output/rebel_audio_clips output/clips \
+            -type f -name "*.mp4" -print || true
           echo "======================================"
           echo "ALL VIDEOS PROCESSED"
           echo "======================================"
-  
 
       - name: Verify campaign assets
+        env:
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
           set -euo pipefail
 
-          echo "Checking Rebel Audio logo:"
-          test -f "rebel_audio_logo_transparent-1 (1).png"
+          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
+            echo "Checking Rebel Audio logo:"
+            test -f "rebel_audio_logo_transparent-1 (1).png"
+            echo "Logo FOUND."
+            ls -lh "rebel_audio_logo_transparent-1 (1).png"
+          else
+            echo "No Rebel Audio logo required for this campaign."
+          fi
 
-          echo "Logo FOUND."
-          ls -lh "rebel_audio_logo_transparent-1 (1).png"
-          
-          
       - name: Generate selected campaign posting package
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
@@ -314,7 +309,6 @@ jobs:
             output/posting_packages \
             "$CAMPAIGN_ID"
 
-          
       - name: Upload selected campaign posting package
         uses: actions/upload-artifact@v4
         with:
