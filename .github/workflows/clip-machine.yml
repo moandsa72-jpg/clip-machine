@@ -1,4 +1,4 @@
-name: Clip Machine - Production Pipeline
+name: Clip Machine Production Pipeline
 
 on:
   workflow_dispatch:
@@ -56,11 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$VIDEO_URL" ]; then
-            if [[ "$VIDEO_URL" == *"drive.google.com/drive/folders/"* ]]; then
-              echo "source_type=drive_folder" >> "$GITHUB_OUTPUT"
-            else
-              echo "source_type=url" >> "$GITHUB_OUTPUT"
-            fi
+            if [[ "$VIDEO_URL" == *"drive.google.com/drive/folders/"* ]]; then echo "source_type=drive_folder" >> "$GITHUB_OUTPUT"; else echo "source_type=url" >> "$GITHUB_OUTPUT"; fi
           else
             VIDEO_FILE="$(find input -maxdepth 1 -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) ! -name '.gitkeep' | sort | head -n 1)"
             [ -n "$VIDEO_FILE" ] || { echo "No video URL or local video was provided."; exit 1; }
@@ -102,45 +98,35 @@ jobs:
           INDEX=0
           while IFS= read -r VIDEO; do
             INDEX=$((INDEX + 1))
-            T="work/transcript_${INDEX}.json"
-            R="work/moments_raw_${INDEX}.json"
-            M="work/moments_${INDEX}.json"
-            C="work/content_type_${INDEX}.json"
-            F="work/faces_${INDEX}.json"
+            T="work/transcript_${INDEX}.json"; R="work/moments_raw_${INDEX}.json"; M="work/moments_${INDEX}.json"; C="work/content_type_${INDEX}.json"; F="work/faces_${INDEX}.json"
             python scripts/transcribe.py "$VIDEO" "$T" || continue
             python scripts/content_detector.py "$T" "$C" || printf '{"content_type":"general"}\n' > "$C"
             python scripts/face_tracking.py "$VIDEO" "$F" || printf '{"fps":0,"samples":[]}\n' > "$F"
             python scripts/find_moments.py "$T" "$R" || printf '{"moments":[]}\n' > "$R"
             COUNT="$(python - "$R" <<'PY'
 import json,sys
-x=json.load(open(sys.argv[1]))
-print(len(x if isinstance(x,list) else x.get('moments',[]) if isinstance(x,dict) else []))
+x=json.load(open(sys.argv[1])); print(len(x if isinstance(x,list) else x.get('moments',[]) if isinstance(x,dict) else []))
 PY
 )"
             if [ "$COUNT" -eq 0 ]; then
               D="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO" || true)"
               python - "$R" "$D" <<'PY'
 import json,sys
-try: d=float(sys.argv[2])
-except: d=0
-if 0<d<180:
-    json.dump([{'start':0.0,'end':d,'score':0,'text':'Short-source fallback clip','fallback':True,'fallback_reason':'zero_moments_under_three_minutes'}],open(sys.argv[1],'w'),indent=2)
+try:d=float(sys.argv[2])
+except:d=0
+if 0<d<180: json.dump([{'start':0.0,'end':d,'score':0,'text':'Short-source fallback clip','fallback':True,'fallback_reason':'zero_moments_under_three_minutes'}],open(sys.argv[1],'w'),indent=2)
 PY
               COUNT="$(python -c "import json;print(len(json.load(open('$R'))))")"
               [ "$COUNT" -gt 0 ] || continue
             fi
             python scripts/optimize_moments.py "$T" "$R" "$M" || cp "$R" "$M"
             if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
-              O="output/rebel_audio_clips/video_${INDEX}"
-              mkdir -p "$O"
+              O="output/rebel_audio_clips/video_${INDEX}"; mkdir -p "$O"
               python scripts/make_clips.py "$VIDEO" "$M" "$O" "$T" "rebel_audio_logo_transparent-1 (1).png" "$C" "$F" || continue
             elif [ "$CAMPAIGN_ID" = "blastoff_warren_zeiders_md_motivator" ]; then
-              O="output/clips/video_${INDEX}"
-              mkdir -p "$O"
+              O="output/clips/video_${INDEX}"; mkdir -p "$O"
               python scripts/make_clips.py "$VIDEO" "$M" "$O" "$T" "$C" "$F" || continue
-            else
-              exit 1
-            fi
+            else exit 1; fi
           done < work/video_list
       - name: Validate generated clips
         env:
@@ -151,10 +137,7 @@ PY
       - name: Verify campaign assets
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
-        run: |
-          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
-            test -f "rebel_audio_logo_transparent-1 (1).png"
-          fi
+        run: if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then test -f "rebel_audio_logo_transparent-1 (1).png"; fi
       - name: Generate selected campaign posting package
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
