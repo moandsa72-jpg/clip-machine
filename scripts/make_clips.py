@@ -40,27 +40,97 @@ def load_face_data(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def choose_face_center(face_data, start, end, width, height):
+def face_centers(face_data, start, end, width):
+    """Return time/center pairs using the largest detected face per sample."""
     if not face_data:
-        return width / 2
+        return []
 
-    centers = []
+    points = []
     for sample in face_data.get("samples", []):
         time = float(sample.get("time", -1))
         if time < start or time > end:
             continue
-        for face in sample.get("faces", []):
-            x = float(face.get("x", 0))
-            w = float(face.get("width", 0))
-            if w > 0:
-                centers.append(x + w / 2)
 
-    if not centers:
+        faces = [
+            face for face in sample.get("faces", [])
+            if float(face.get("width", 0)) > 0
+        ]
+        if not faces:
+            continue
+
+        face = max(
+            faces,
+            key=lambda item: float(item.get("width", 0)) * float(item.get("height", 0)),
+        )
+        center = float(face.get("x", 0)) + float(face.get("width", 0)) / 2
+        points.append((time, max(0.0, min(float(width), center))))
+
+    points.sort(key=lambda item: item[0])
+    return points
+
+
+def smooth_points(points, window=3):
+    if len(points) <= 2:
+        return points
+
+    result = []
+    half = max(1, window // 2)
+    for index, (time, _center) in enumerate(points):
+        start = max(0, index - half)
+        end = min(len(points), index + half + 1)
+        centers = [point[1] for point in points[start:end]]
+        centers.sort()
+        result.append((time, centers[len(centers) // 2]))
+    return result
+
+
+def choose_face_center(face_data, start, end, width):
+    points = face_centers(face_data, start, end, width)
+    if not points:
         return width / 2
-
-    # Median center is robust against one-off false detections.
-    centers.sort()
+    points = smooth_points(points)
+    centers = sorted(point[1] for point in points)
     return centers[len(centers) // 2]
+
+
+def build_crop_x_expression(face_data, start, end, source_width, crop_width):
+    """Build a time-based FFmpeg crop expression for smooth camera movement."""
+    max_x = max(0, source_width - crop_width)
+    points = face_centers(face_data, start, end, source_width)
+
+    if not points:
+        center = source_width / 2
+        return str(int(max(0, min(max_x, center - crop_width / 2))))
+
+    # Downsample to at most one camera keyframe per second.
+    selected = []
+    last_time = None
+    for time, center in smooth_points(points):
+        if last_time is None or time - last_time >= 0.75:
+            selected.append((time, center))
+            last_time = time
+    if selected[-1] != smooth_points(points)[-1]:
+        selected.append(smooth_points(points)[-1])
+
+    def crop_center(center):
+        return max(0.0, min(float(max_x), center - crop_width / 2))
+
+    selected = [(time, crop_center(center)) for time, center in selected]
+    selected.sort(key=lambda item: item[0])
+
+    if len(selected) == 1:
+        return f"{selected[0][1]:.2f}"
+
+    # FFmpeg expressions support nested if() and linear interpolation.
+    expression = f"{selected[-1][1]:.2f}"
+    for index in range(len(selected) - 2, -1, -1):
+        t0, x0 = selected[index]
+        t1, x1 = selected[index + 1]
+        span = max(0.001, t1 - t0)
+        interpolation = f"({x0:.2f}+({x1 - x0:.2f})*(t-{t0 - start:.3f})/{span:.3f})"
+        expression = f"if(lt(t,{t1 - start:.3f}),{interpolation},{expression})"
+
+    return expression
 
 
 def make_clip(video_path, start, end, output_path, transcript_path, logo_path=None, face_data=None):
@@ -88,17 +158,22 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
     )
 
     width, height = get_video_dimensions(video_path)
-    center_x = choose_face_center(face_data, start, end, width, height)
-
-    # Target 9:16. For wide source video, crop around the detected face center.
     crop_width = min(width, int(height * 9 / 16))
-    crop_x = max(0, min(width - crop_width, int(center_x - crop_width / 2)))
+    crop_x_expression = build_crop_x_expression(
+        face_data,
+        start,
+        end,
+        width,
+        crop_width,
+    )
 
+    static_center = choose_face_center(face_data, start, end, width)
     print(f"Source dimensions: {width}x{height}")
-    print(f"Face-aware crop: x={crop_x}, width={crop_width}")
+    print(f"Face-aware camera center: {static_center:.1f}")
+    print(f"Smooth crop expression: {crop_x_expression}")
 
     video_filter = (
-        f"[0:v]crop={crop_width}:{height}:{crop_x}:0,"
+        f"[0:v]crop={crop_width}:{height}:{crop_x_expression}:0,"
         "split=2[bg][fg];"
         "[bg]scale=270:480:force_original_aspect_ratio=increase,"
         "crop=270:480,boxblur=6:3,scale=1080:1920[bgblur];"
@@ -190,7 +265,7 @@ def main():
 
     print("Creating fully automated vertical clips.")
     print("Output: 1080x1920")
-    print("Face-aware framing: enabled" if face_data else "Face-aware framing: disabled")
+    print("Face-aware smooth framing: enabled" if face_data else "Face-aware framing: disabled")
     print(f"Campaign logo: {logo_path or 'none'}")
 
     created = 0
