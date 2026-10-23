@@ -15,8 +15,7 @@ def get_video_dimensions(video_path):
             "ffprobe", "-v", "error", "-select_streams", "v:0",
             "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0",
             str(video_path),
-        ],
-        capture_output=True, text=True, check=True,
+        ], capture_output=True, text=True, check=True,
     )
     value = result.stdout.strip()
     if "x" not in value:
@@ -32,10 +31,8 @@ def load_face_data(path):
 
 
 def face_centers(face_data, start, end, width):
-    """Return time/center pairs using the largest detected face per sample."""
     if not face_data:
         return []
-
     points = []
     for sample in face_data.get("samples", []):
         time = float(sample.get("time", -1))
@@ -53,7 +50,6 @@ def face_centers(face_data, start, end, width):
         )
         center = float(face.get("x", 0)) + float(face.get("width", 0)) / 2
         points.append((time, max(0.0, min(float(width), center))))
-
     points.sort(key=lambda item: item[0])
     return points
 
@@ -80,10 +76,8 @@ def choose_face_center(face_data, start, end, width):
 
 
 def build_crop_x_expression(face_data, start, end, source_width, crop_width):
-    """Build a time-based FFmpeg crop expression for smooth camera movement."""
     max_x = max(0, source_width - crop_width)
     points = smooth_points(face_centers(face_data, start, end, source_width))
-
     if not points:
         center = source_width / 2
         return str(int(max(0, min(max_x, center - crop_width / 2))))
@@ -102,7 +96,6 @@ def build_crop_x_expression(face_data, start, end, source_width, crop_width):
 
     selected = [(time, crop_center(center)) for time, center in selected]
     relative = [(time - start, x) for time, x in selected]
-
     if len(relative) == 1:
         return f"{relative[0][1]:.2f}"
 
@@ -114,7 +107,6 @@ def build_crop_x_expression(face_data, start, end, source_width, crop_width):
         interpolation = f"({x0:.2f}+({x1 - x0:.2f})*(t-{t0:.3f})/{span:.3f})"
         expression = f"if(lt(t,{t1:.3f}),{interpolation},{expression})"
 
-    # Hold the first camera position until the first detected keyframe.
     first_time, first_x = relative[0]
     return f"if(lt(t,{first_time:.3f}),{first_x:.2f},{expression})"
 
@@ -138,10 +130,7 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
 
     width, height = get_video_dimensions(video_path)
     crop_width = min(width, int(height * 9 / 16))
-    crop_x_expression = build_crop_x_expression(
-        face_data, start, end, width, crop_width,
-    )
-
+    crop_x_expression = build_crop_x_expression(face_data, start, end, width, crop_width)
     static_center = choose_face_center(face_data, start, end, width)
     print(f"Source dimensions: {width}x{height}")
     print(f"Face-aware camera center: {static_center:.1f}")
@@ -177,7 +166,6 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
         "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart", str(output_path),
     ]
-
     run_command(command)
     if subtitle_path.exists():
         subtitle_path.unlink()
@@ -219,16 +207,19 @@ def main():
     if face_path and not face_path.exists():
         raise FileNotFoundError(f"Face data file not found: {face_path}")
 
-    with open(moments_path, "r", encoding="utf-8") as file:
-        moments = json.load(file).get("moments", [])
+    data = json.loads(moments_path.read_text(encoding="utf-8"))
+    moments = data.get("moments", []) if isinstance(data, dict) else data
     if not moments:
         print("No moments found.")
         sys.exit(1)
 
+    content_type = {}
     if content_type_path:
         content_type = json.loads(content_type_path.read_text(encoding="utf-8"))
         print(f"Content type: {content_type.get('content_type', 'general')}")
 
+    transcript = json.loads(transcript_path.read_text(encoding="utf-8"))
+    transcript_segments = transcript.get("segments", []) if isinstance(transcript, dict) else []
     face_data = load_face_data(face_path)
     output_dir.mkdir(parents=True, exist_ok=True)
     print("Creating fully automated vertical clips.")
@@ -245,9 +236,30 @@ def main():
             continue
         output_path = output_dir / f"clip_{index:02d}.mp4"
         print(f"Creating clip {index}: {start:.2f}s–{end:.2f}s")
-        make_clip(
-            video_path, start, end, output_path, transcript_path,
-            logo_path, face_data,
+        make_clip(video_path, start, end, output_path, transcript_path, logo_path, face_data)
+
+        source_text = " ".join(
+            str(segment.get("text", "")).strip()
+            for segment in transcript_segments
+            if float(segment.get("end", 0)) > start and float(segment.get("start", 0)) < end
+        ).strip()
+        metadata = {
+            "filename": output_path.name,
+            "source_video": str(video_path),
+            "start": round(start, 3),
+            "end": round(end, 3),
+            "duration_seconds": round(end - start, 3),
+            "text": source_text[:2000],
+            "hook_text": moment.get("hook_text", source_text[:240]),
+            "hook_score": moment.get("hook_score", 0),
+            "hook_optimized": bool(moment.get("hook_optimized", False)),
+            "edge_silence_trimmed": bool(moment.get("edge_silence_trimmed", False)),
+            "moment_score": moment.get("score", 0),
+            "fallback": bool(moment.get("fallback", False)),
+            "content_type": content_type.get("content_type", "general"),
+        }
+        output_path.with_suffix(".json").write_text(
+            json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
         created += 1
 
