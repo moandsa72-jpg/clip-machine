@@ -12,20 +12,11 @@ def run_command(command):
 def get_video_dimensions(video_path):
     result = subprocess.run(
         [
-            "ffprobe",
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=width,height",
-            "-of",
-            "csv=s=x:p=0",
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0",
             str(video_path),
         ],
-        capture_output=True,
-        text=True,
-        check=True,
+        capture_output=True, text=True, check=True,
     )
     value = result.stdout.strip()
     if "x" not in value:
@@ -50,14 +41,12 @@ def face_centers(face_data, start, end, width):
         time = float(sample.get("time", -1))
         if time < start or time > end:
             continue
-
         faces = [
             face for face in sample.get("faces", [])
             if float(face.get("width", 0)) > 0
         ]
         if not faces:
             continue
-
         face = max(
             faces,
             key=lambda item: float(item.get("width", 0)) * float(item.get("height", 0)),
@@ -72,23 +61,20 @@ def face_centers(face_data, start, end, width):
 def smooth_points(points, window=3):
     if len(points) <= 2:
         return points
-
     result = []
     half = max(1, window // 2)
     for index, (time, _center) in enumerate(points):
-        start = max(0, index - half)
-        end = min(len(points), index + half + 1)
-        centers = [point[1] for point in points[start:end]]
-        centers.sort()
+        left = max(0, index - half)
+        right = min(len(points), index + half + 1)
+        centers = sorted(point[1] for point in points[left:right])
         result.append((time, centers[len(centers) // 2]))
     return result
 
 
 def choose_face_center(face_data, start, end, width):
-    points = face_centers(face_data, start, end, width)
+    points = smooth_points(face_centers(face_data, start, end, width))
     if not points:
         return width / 2
-    points = smooth_points(points)
     centers = sorted(point[1] for point in points)
     return centers[len(centers) // 2]
 
@@ -96,41 +82,41 @@ def choose_face_center(face_data, start, end, width):
 def build_crop_x_expression(face_data, start, end, source_width, crop_width):
     """Build a time-based FFmpeg crop expression for smooth camera movement."""
     max_x = max(0, source_width - crop_width)
-    points = face_centers(face_data, start, end, source_width)
+    points = smooth_points(face_centers(face_data, start, end, source_width))
 
     if not points:
         center = source_width / 2
         return str(int(max(0, min(max_x, center - crop_width / 2))))
 
-    # Downsample to at most one camera keyframe per second.
     selected = []
     last_time = None
-    for time, center in smooth_points(points):
+    for time, center in points:
         if last_time is None or time - last_time >= 0.75:
             selected.append((time, center))
             last_time = time
-    if selected[-1] != smooth_points(points)[-1]:
-        selected.append(smooth_points(points)[-1])
+    if selected[-1] != points[-1]:
+        selected.append(points[-1])
 
     def crop_center(center):
         return max(0.0, min(float(max_x), center - crop_width / 2))
 
     selected = [(time, crop_center(center)) for time, center in selected]
-    selected.sort(key=lambda item: item[0])
+    relative = [(time - start, x) for time, x in selected]
 
-    if len(selected) == 1:
-        return f"{selected[0][1]:.2f}"
+    if len(relative) == 1:
+        return f"{relative[0][1]:.2f}"
 
-    # FFmpeg expressions support nested if() and linear interpolation.
-    expression = f"{selected[-1][1]:.2f}"
-    for index in range(len(selected) - 2, -1, -1):
-        t0, x0 = selected[index]
-        t1, x1 = selected[index + 1]
+    expression = f"{relative[-1][1]:.2f}"
+    for index in range(len(relative) - 2, -1, -1):
+        t0, x0 = relative[index]
+        t1, x1 = relative[index + 1]
         span = max(0.001, t1 - t0)
-        interpolation = f"({x0:.2f}+({x1 - x0:.2f})*(t-{t0 - start:.3f})/{span:.3f})"
-        expression = f"if(lt(t,{t1 - start:.3f}),{interpolation},{expression})"
+        interpolation = f"({x0:.2f}+({x1 - x0:.2f})*(t-{t0:.3f})/{span:.3f})"
+        expression = f"if(lt(t,{t1:.3f}),{interpolation},{expression})"
 
-    return expression
+    # Hold the first camera position until the first detected keyframe.
+    first_time, first_x = relative[0]
+    return f"if(lt(t,{first_time:.3f}),{first_x:.2f},{expression})"
 
 
 def make_clip(video_path, start, end, output_path, transcript_path, logo_path=None, face_data=None):
@@ -139,32 +125,21 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
 
     subtitle_path = output_path.with_suffix(".ass")
     run_command([
-        sys.executable,
-        "scripts/captions.py",
-        str(transcript_path),
-        str(start),
-        str(end),
-        str(subtitle_path),
+        sys.executable, "scripts/captions.py", str(transcript_path),
+        str(start), str(end), str(subtitle_path),
     ])
 
     subtitle_filter_path = str(subtitle_path.resolve())
     subtitle_filter_path = (
         subtitle_filter_path.replace("\\", "\\\\")
-        .replace(":", "\\:")
-        .replace("'", "\\'")
-        .replace(",", "\\,")
-        .replace("[", "\\[")
-        .replace("]", "\\]")
+        .replace(":", "\\:").replace("'", "\\'")
+        .replace(",", "\\,").replace("[", "\\[").replace("]", "\\]")
     )
 
     width, height = get_video_dimensions(video_path)
     crop_width = min(width, int(height * 9 / 16))
     crop_x_expression = build_crop_x_expression(
-        face_data,
-        start,
-        end,
-        width,
-        crop_width,
+        face_data, start, end, width, crop_width,
     )
 
     static_center = choose_face_center(face_data, start, end, width)
@@ -182,7 +157,6 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
     )
 
     input_args = ["-i", str(video_path)]
-
     if logo_path is not None:
         logo_path = Path(logo_path)
         if not logo_path.is_file():
@@ -197,13 +171,11 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
         video_filter += f";[base]subtitles='{subtitle_filter_path}'[outv]"
 
     command = [
-        "ffmpeg", "-y", "-nostdin", "-ss", str(start),
-        *input_args, "-t", str(duration),
-        "-filter_complex", video_filter,
-        "-map", "[outv]", "-map", "0:a?",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
-        str(output_path),
+        "ffmpeg", "-y", "-nostdin", "-ss", str(start), *input_args,
+        "-t", str(duration), "-filter_complex", video_filter,
+        "-map", "[outv]", "-map", "0:a?", "-c:v", "libx264",
+        "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart", str(output_path),
     ]
 
     run_command(command)
@@ -240,7 +212,6 @@ def main():
     for path in (video_path, moments_path, transcript_path):
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
-
     if logo_path and not logo_path.exists():
         raise FileNotFoundError(f"Logo file not found: {logo_path}")
     if content_type_path and not content_type_path.exists():
@@ -250,19 +221,16 @@ def main():
 
     with open(moments_path, "r", encoding="utf-8") as file:
         moments = json.load(file).get("moments", [])
-
     if not moments:
         print("No moments found.")
         sys.exit(1)
 
-    content_type = None
     if content_type_path:
         content_type = json.loads(content_type_path.read_text(encoding="utf-8"))
         print(f"Content type: {content_type.get('content_type', 'general')}")
 
     face_data = load_face_data(face_path)
     output_dir.mkdir(parents=True, exist_ok=True)
-
     print("Creating fully automated vertical clips.")
     print("Output: 1080x1920")
     print("Face-aware smooth framing: enabled" if face_data else "Face-aware framing: disabled")
@@ -275,7 +243,6 @@ def main():
         if end <= start:
             print(f"Skipping invalid moment {index}")
             continue
-
         output_path = output_dir / f"clip_{index:02d}.mp4"
         print(f"Creating clip {index}: {start:.2f}s–{end:.2f}s")
         make_clip(
