@@ -27,33 +27,47 @@ def get_video_dimensions(video_path):
         text=True,
         check=True,
     )
-
     value = result.stdout.strip()
-
     if "x" not in value:
-        raise RuntimeError(
-            f"Could not determine video dimensions: {value}"
-        )
-
+        raise RuntimeError(f"Could not determine video dimensions: {value}")
     width, height = value.split("x", 1)
-
     return int(width), int(height)
 
 
-def make_clip(
-    video_path,
-    start,
-    end,
-    output_path,
-    transcript_path,
-    logo_path=None,
-):
-    duration = end - start
+def load_face_data(path):
+    if not path:
+        return None
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
+
+def choose_face_center(face_data, start, end, width, height):
+    if not face_data:
+        return width / 2
+
+    centers = []
+    for sample in face_data.get("samples", []):
+        time = float(sample.get("time", -1))
+        if time < start or time > end:
+            continue
+        for face in sample.get("faces", []):
+            x = float(face.get("x", 0))
+            w = float(face.get("width", 0))
+            if w > 0:
+                centers.append(x + w / 2)
+
+    if not centers:
+        return width / 2
+
+    # Median center is robust against one-off false detections.
+    centers.sort()
+    return centers[len(centers) // 2]
+
+
+def make_clip(video_path, start, end, output_path, transcript_path, logo_path=None, face_data=None):
+    duration = end - start
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     subtitle_path = output_path.with_suffix(".ass")
-
     run_command([
         sys.executable,
         "scripts/captions.py",
@@ -64,10 +78,8 @@ def make_clip(
     ])
 
     subtitle_filter_path = str(subtitle_path.resolve())
-
     subtitle_filter_path = (
-        subtitle_filter_path
-        .replace("\\", "\\\\")
+        subtitle_filter_path.replace("\\", "\\\\")
         .replace(":", "\\:")
         .replace("'", "\\'")
         .replace(",", "\\,")
@@ -76,115 +88,59 @@ def make_clip(
     )
 
     width, height = get_video_dimensions(video_path)
+    center_x = choose_face_center(face_data, start, end, width, height)
 
-    aspect_ratio = width / height
+    # Target 9:16. For wide source video, crop around the detected face center.
+    crop_width = min(width, int(height * 9 / 16))
+    crop_x = max(0, min(width - crop_width, int(center_x - crop_width / 2)))
 
-    print(
-        f"Source dimensions: {width}x{height} "
-        f"(aspect ratio: {aspect_ratio:.3f})"
-    )
+    print(f"Source dimensions: {width}x{height}")
+    print(f"Face-aware crop: x={crop_x}, width={crop_width}")
 
     video_filter = (
-        "[0:v]"
+        f"[0:v]crop={crop_width}:{height}:{crop_x}:0,"
         "split=2[bg][fg];"
-        "[bg]"
-        "scale=270:480:force_original_aspect_ratio=increase,"
-        "crop=270:480,"
-        "boxblur=6:3,"
-        "scale=1080:1920"
-        "[bgblur];"
-        "[fg]"
-        "scale=1080:-2"
-        "[fgfit];"
-        "[bgblur][fgfit]"
-        "overlay=(W-w)/2:(H-h)/2,"
-        "setsar=1"
-        "[base]"
+        "[bg]scale=270:480:force_original_aspect_ratio=increase,"
+        "crop=270:480,boxblur=6:3,scale=1080:1920[bgblur];"
+        "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fgfit];"
+        "[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,setsar=1[base]"
     )
 
-    input_args = [
-        "-i",
-        str(video_path),
-    ]
+    input_args = ["-i", str(video_path)]
 
     if logo_path is not None:
         logo_path = Path(logo_path)
-
         if not logo_path.is_file():
-            raise FileNotFoundError(
-                f"Logo file not found: {logo_path}"
-            )
-
+            raise FileNotFoundError(f"Logo file not found: {logo_path}")
         video_filter += (
-            ";[1:v]"
-            "scale=420:-1"
-            "[logo];"
-            "[base][logo]"
-            "overlay=(W-w)/2:70"
-            "[branded];"
-            f"[branded]"
-            f"subtitles='{subtitle_filter_path}'"
-            "[outv]"
+            ";[1:v]scale=420:-1[logo];"
+            "[base][logo]overlay=(W-w)/2:70[branded];"
+            f"[branded]subtitles='{subtitle_filter_path}'[outv]"
         )
-
-        input_args = [
-            "-i",
-            str(video_path),
-            "-loop",
-            "1",
-            "-i",
-            str(logo_path),
-        ]
-
+        input_args = ["-i", str(video_path), "-loop", "1", "-i", str(logo_path)]
     else:
-        video_filter += (
-            ";[base]"
-            f"subtitles='{subtitle_filter_path}'"
-            "[outv]"
-        )
+        video_filter += f";[base]subtitles='{subtitle_filter_path}'[outv]"
 
     command = [
-        "ffmpeg",
-        "-y",
-        "-nostdin",
-        "-ss",
-        str(start),
-        *input_args,
-        "-t",
-        str(duration),
-        "-filter_complex",
-        video_filter,
-        "-map",
-        "[outv]",
-        "-map",
-        "0:a?",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-movflags",
-        "+faststart",
+        "ffmpeg", "-y", "-nostdin", "-ss", str(start),
+        *input_args, "-t", str(duration),
+        "-filter_complex", video_filter,
+        "-map", "[outv]", "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
         str(output_path),
     ]
 
     run_command(command)
-
     if subtitle_path.exists():
         subtitle_path.unlink()
 
 
 def main():
-    if len(sys.argv) not in (5, 6, 7):
+    if len(sys.argv) not in (5, 6, 7, 8):
         print(
-            "Usage: python scripts/make_clips.py "
-            "<video> <moments.json> <output_dir> "
-            "<transcript.json> [logo.png] [content_type.json]"
+            "Usage: python scripts/make_clips.py <video> <moments.json> "
+            "<output_dir> <transcript.json> [logo.png] [content_type.json] [faces.json]"
         )
         sys.exit(1)
 
@@ -192,121 +148,65 @@ def main():
     moments_path = Path(sys.argv[2])
     output_dir = Path(sys.argv[3])
     transcript_path = Path(sys.argv[4])
-
     logo_path = None
     content_type_path = None
+    face_path = None
 
-    if len(sys.argv) == 6:
-        argument_path = Path(sys.argv[5])
-
-        if argument_path.suffix.lower() == ".json":
-            content_type_path = argument_path
-
-            if not content_type_path.exists():
-                raise FileNotFoundError(
-                    f"Content type file not found: {content_type_path}"
-                )
+    for argument in sys.argv[5:]:
+        path = Path(argument)
+        if path.suffix.lower() == ".json":
+            if "face" in path.name.lower():
+                face_path = path
+            else:
+                content_type_path = path
         else:
-            logo_path = argument_path
+            logo_path = path
 
-            if not logo_path.exists():
-                raise FileNotFoundError(
-                    f"Logo file not found: {logo_path}"
-                )
-
-    elif len(sys.argv) == 7:
-        logo_path = Path(sys.argv[5])
-        content_type_path = Path(sys.argv[6])
-
-        if not logo_path.exists():
-            raise FileNotFoundError(
-                f"Logo file not found: {logo_path}"
-            )
-
-        if not content_type_path.exists():
-            raise FileNotFoundError(
-                f"Content type file not found: {content_type_path}"
-            )
-
-    for path in (
-        video_path,
-        moments_path,
-        transcript_path,
-    ):
+    for path in (video_path, moments_path, transcript_path):
         if not path.exists():
-            raise FileNotFoundError(
-                f"File not found: {path}"
-            )
+            raise FileNotFoundError(f"File not found: {path}")
 
-    if content_type_path:
-        with open(
-            content_type_path,
-            "r",
-            encoding="utf-8"
-        ) as file:
-            content_type = json.load(file)
-
-        print(
-            f"Content type: "
-            f"{content_type.get('content_type', 'general')}"
-        )
+    if logo_path and not logo_path.exists():
+        raise FileNotFoundError(f"Logo file not found: {logo_path}")
+    if content_type_path and not content_type_path.exists():
+        raise FileNotFoundError(f"Content type file not found: {content_type_path}")
+    if face_path and not face_path.exists():
+        raise FileNotFoundError(f"Face data file not found: {face_path}")
 
     with open(moments_path, "r", encoding="utf-8") as file:
-        data = json.load(file)
-
-    moments = data.get("moments", [])
+        moments = json.load(file).get("moments", [])
 
     if not moments:
         print("No moments found.")
         sys.exit(1)
 
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
+    content_type = None
+    if content_type_path:
+        content_type = json.loads(content_type_path.read_text(encoding="utf-8"))
+        print(f"Content type: {content_type.get('content_type', 'general')}")
 
-    print("Creating clips with synchronized captions.")
-    print("Vertical output: 1080x1920")
-    print("Background: blurred source video")
-    print("Foreground: clear source video")
+    face_data = load_face_data(face_path)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    if logo_path:
-        print(f"Campaign logo: {logo_path}")
-    else:
-        print("Campaign logo: none")
-
-    print(f"Moments found: {len(moments)}")
+    print("Creating fully automated vertical clips.")
+    print("Output: 1080x1920")
+    print("Face-aware framing: enabled" if face_data else "Face-aware framing: disabled")
+    print(f"Campaign logo: {logo_path or 'none'}")
 
     created = 0
-
     for index, moment in enumerate(moments, start=1):
         start = float(moment["start"])
         end = float(moment["end"])
-
         if end <= start:
-            print(
-                f"Skipping invalid moment {index}"
-            )
+            print(f"Skipping invalid moment {index}")
             continue
 
-        output_path = (
-            output_dir / f"clip_{index:02d}.mp4"
-        )
-
-        print(
-            f"Creating clip {index}: "
-            f"{start:.2f}s–{end:.2f}s"
-        )
-
+        output_path = output_dir / f"clip_{index:02d}.mp4"
+        print(f"Creating clip {index}: {start:.2f}s–{end:.2f}s")
         make_clip(
-            video_path,
-            start,
-            end,
-            output_path,
-            transcript_path,
-            logo_path,
+            video_path, start, end, output_path, transcript_path,
+            logo_path, face_data,
         )
-
         created += 1
 
     print("========================================")
