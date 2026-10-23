@@ -142,6 +142,64 @@ jobs:
             python scripts/face_tracking.py "$VIDEO" "$FACES"
             python scripts/find_moments.py "$TRANSCRIPT" "$MOMENTS"
 
+            MOMENT_COUNT="$(python - "$MOMENTS" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as f:
+    data = json.load(f)
+
+if isinstance(data, list):
+    moments = data
+elif isinstance(data, dict):
+    moments = data.get("moments", [])
+else:
+    moments = []
+
+print(len(moments))
+PY
+)"
+
+            if [ "$MOMENT_COUNT" -eq 0 ]; then
+              DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO")"
+              SHORT_VIDEO="$(python - "$DURATION" <<'PY'
+import sys
+try:
+    duration = float(sys.argv[1])
+except (TypeError, ValueError):
+    duration = 0
+print("yes" if 0 < duration < 180 else "no")
+PY
+)"
+
+              if [ "$SHORT_VIDEO" = "yes" ]; then
+                echo "No scored moments found, but source is under 3 minutes. Using the full source as the campaign fallback clip."
+                python - "$MOMENTS" "$DURATION" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+duration = float(sys.argv[2])
+
+fallback = [{
+    "start": 0.0,
+    "end": duration,
+    "score": 0,
+    "text": "Short-source fallback clip",
+    "fallback": True,
+    "fallback_reason": "zero_moments_under_three_minutes",
+}]
+
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(fallback, f, indent=2, ensure_ascii=False)
+PY
+              else
+                echo "No scored moments found and source is 3 minutes or longer; skipping this source."
+                continue
+              fi
+            fi
+
             case "$CAMPAIGN_ID" in
               blastoff_jingle_jared_rebel_audio)
                 OUTPUT_DIR="output/rebel_audio_clips/video_${INDEX}"
