@@ -1,3 +1,4 @@
+# Clip Machine production workflow — registration refresh; pipeline unchanged.
 name: Clip Machine
 
 on:
@@ -37,12 +38,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg fonts-dejavu
       - name: Set up Python
+        run: python -m pip install --upgrade pip
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Install free Python packages
         run: |
-          python -m pip install --upgrade pip
           python -m pip install faster-whisper gdown opencv-python mediapipe
       - name: Preflight Python scripts
         run: python -m py_compile scripts/*.py
