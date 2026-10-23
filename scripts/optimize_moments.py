@@ -24,7 +24,7 @@ def clean(text):
     return re.sub(r"\s+", " ", str(text)).strip()
 
 
-def score_hook(text):
+def score_hook(text, focus_terms=None):
     ws = words(text)
     if not ws:
         return -100
@@ -33,7 +33,7 @@ def score_hook(text):
     score += min(sum(w in {"you", "your", "we", "i", "my", "our"} for w in ws[:12]) * 1.5, 6)
     if "?" in text:
         score += 5
-    if any(w in {"because", "but", "however", "until", "turns", "turns out"} for w in ws):
+    if any(w in {"because", "but", "however", "until", "turns"} for w in ws):
         score += 3
     if re.search(r"\b\d+(?:\.\d+)?%?\b", text):
         score += 2
@@ -43,6 +43,11 @@ def score_hook(text):
         score -= 7
     if len(ws) < 4:
         score -= 8
+    if focus_terms:
+        text_lower = " ".join(ws)
+        for term in focus_terms:
+            if term in text_lower:
+                score += 4
     return round(score, 2)
 
 
@@ -63,8 +68,7 @@ def segment_bounds(segment):
 
 
 def word_bounds(segments, start, end):
-    starts = []
-    ends = []
+    starts, ends = [], []
     for segment in segments:
         for item in segment.get("words", []) or []:
             try:
@@ -78,24 +82,24 @@ def word_bounds(segments, start, end):
     return (min(starts) if starts else start, max(ends) if ends else end)
 
 
-def candidates(segments, start, end):
+def candidates(segments, start, end, hook_window):
     result = []
     for segment in segments:
         ss, se = segment_bounds(segment)
         text = segment_text(segment)
         if ss is None or not text or se <= start or ss >= end:
             continue
-        if ss < start or ss > min(end, start + 6.0):
+        if ss < start or ss > min(end, start + hook_window):
             continue
         result.append((ss, se, text))
     return result
 
 
-def optimize(moment, segments):
-    start = float(moment.get("start", 0))
-    end = float(moment.get("end", 0))
+def optimize(moment, segments, focus_terms, hook_window):
+    original_start = float(moment.get("start", 0))
+    original_end = float(moment.get("end", 0))
+    start, end = original_start, original_end
     fallback = bool(moment.get("fallback"))
-
     if end <= start:
         return None
 
@@ -104,20 +108,18 @@ def optimize(moment, segments):
     end = max(trimmed_end, start + 0.5)
 
     best = None
-    for ss, se, text in candidates(segments, start, end):
-        hook = score_hook(text)
+    for ss, se, text in candidates(segments, start, end, hook_window):
+        hook = score_hook(text, focus_terms)
         if best is None or hook > best[0]:
             best = (hook, ss, text)
 
-    original_start = start
-    hook_score = score_hook(clean(moment.get("text", "")))
-    hook_text = clean(moment.get("text", ""))
+    original_text = clean(moment.get("text", ""))
+    hook_score = score_hook(original_text, focus_terms)
+    hook_text = original_text
 
     if best and not fallback:
         candidate_score, candidate_start, candidate_text = best
         proposed_duration = end - candidate_start
-        # Only move the opening when it materially improves the hook and
-        # preserves a useful standalone clip length.
         if candidate_score >= hook_score + 3 and proposed_duration >= 10:
             start = candidate_start
             hook_score = candidate_score
@@ -129,26 +131,48 @@ def optimize(moment, segments):
     result["hook_score"] = round(hook_score, 2)
     result["hook_text"] = hook_text[:240]
     result["hook_optimized"] = bool(best and start != original_start and not fallback)
-    result["edge_silence_trimmed"] = bool(start != float(moment.get("start", start)) or end != float(moment.get("end", end)))
+    result["hook_deadline_seconds"] = hook_window
+    result["edge_silence_trimmed"] = bool(start != original_start or end != original_end)
     return result
 
 
-def main():
-    if len(sys.argv) != 4:
-        raise SystemExit("Usage: python scripts/optimize_moments.py <transcript.json> <moments.json> <output.json>")
+def load_campaign(config_path, campaign_id):
+    if not config_path or not campaign_id:
+        return {}, [], 3.0
+    try:
+        config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+        campaign = config.get("campaigns", {}).get(campaign_id, {})
+        req = campaign.get("content_requirements", {})
+        focus = [str(x).lower() for x in req.get("content_focus", [])]
+        featured = req.get("featured_person")
+        if featured:
+            focus.append(str(featured).lower())
+        if req.get("warren_zeiders_must_be_present"):
+            focus.append("warren zeiders")
+        hook_window = float(req.get("opening_hook_deadline_seconds", 3))
+        return req, focus, hook_window
+    except Exception:
+        return {}, [], 3.0
 
-    transcript_path, moments_path, output_path = map(Path, sys.argv[1:])
+
+def main():
+    if len(sys.argv) not in (4, 6):
+        raise SystemExit("Usage: python scripts/optimize_moments.py <transcript.json> <moments.json> <output.json> [campaign_config.json campaign_id]")
+
+    transcript_path, moments_path, output_path = map(Path, sys.argv[1:4])
+    config_path = sys.argv[4] if len(sys.argv) == 6 else None
+    campaign_id = sys.argv[5] if len(sys.argv) == 6 else None
+    requirements, focus_terms, hook_window = load_campaign(config_path, campaign_id)
     segments = load_transcript(transcript_path)
     data = json.loads(moments_path.read_text(encoding="utf-8"))
     moments = data.get("moments", []) if isinstance(data, dict) else data
     if not isinstance(moments, list):
         moments = []
 
-    optimized = [optimize(moment, segments) for moment in moments]
+    optimized = [optimize(moment, segments, focus_terms, hook_window) for moment in moments]
     optimized = [item for item in optimized if item and item["end"] > item["start"]]
-    optimized.sort(key=lambda item: float(item.get("score", 0)), reverse=True)
+    optimized.sort(key=lambda item: (float(item.get("hook_score", 0)), float(item.get("score", 0))), reverse=True)
 
-    # Keep strong moments and remove near-duplicates after hook optimization.
     selected = []
     for item in optimized:
         overlap = False
@@ -165,13 +189,17 @@ def main():
 
     selected.sort(key=lambda item: (float(item["start"]), float(item["end"])))
     output = {
-        "version": "hook-optimizer-v1",
+        "version": "hook-optimizer-v2",
+        "campaign_id": campaign_id,
+        "campaign_requirements_used": bool(requirements),
         "moments": selected,
         "count": len(selected),
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"HOOK OPTIMIZATION COMPLETE: {len(selected)} moments")
+    print(f"Campaign-aware focus: {bool(focus_terms)}")
+    print(f"Hook deadline: {hook_window:.1f}s")
 
 
 if __name__ == "__main__":
