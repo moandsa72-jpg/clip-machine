@@ -1,4 +1,4 @@
-name: Clip Machine Production Pipeline
+name: Clip Machine
 
 on:
   workflow_dispatch:
