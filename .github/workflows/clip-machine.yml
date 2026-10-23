@@ -218,6 +218,19 @@ PY
             esac
           done < work/video_list
 
+      - name: Validate generated clips
+        env:
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
+            CLIPS_DIR="output/rebel_audio_clips"
+          else
+            CLIPS_DIR="output/clips"
+          fi
+          python scripts/validate_clips.py "$CLIPS_DIR"
+
       - name: Verify campaign assets
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
