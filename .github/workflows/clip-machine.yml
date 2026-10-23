@@ -1,6 +1,11 @@
 name: Clip Machine - Production Pipeline
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/clip-machine.yml
   workflow_dispatch:
     inputs:
       campaign_id:
@@ -27,6 +32,7 @@ concurrency:
 jobs:
   create-clips:
     name: Download, Analyze, and Create Clips
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
@@ -83,23 +89,17 @@ jobs:
         if: steps.source.outputs.source_type == 'url'
         env:
           VIDEO_URL: ${{ inputs.video_url }}
-        run: |
-          set -euo pipefail
-          python scripts/download_video.py "$VIDEO_URL" work/source_video.mp4
+        run: python scripts/download_video.py "$VIDEO_URL" work/source_video.mp4
 
       - name: Download Google Drive folder
         if: steps.source.outputs.source_type == 'drive_folder'
         env:
           VIDEO_URL: ${{ inputs.video_url }}
         run: |
-          set -euo pipefail
           mkdir -p work/drive_videos
           python -m gdown "$VIDEO_URL" --folder --output work/drive_videos
           COUNT="$(find work/drive_videos -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) | wc -l)"
-          if [ "$COUNT" -eq 0 ]; then
-            echo "No supported videos were found in the Google Drive folder."
-            exit 1
-          fi
+          test "$COUNT" -gt 0
 
       - name: Prepare video list
         env:
@@ -110,19 +110,12 @@ jobs:
           mkdir -p work/videos
           : > work/video_list
           case "$SOURCE_TYPE" in
-            local)
-              find input -maxdepth 1 -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list
-              ;;
-            url)
-              echo "work/source_video.mp4" >> work/video_list
-              ;;
-            drive_folder)
-              find work/drive_videos -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list
-              ;;
+            local) find input -maxdepth 1 -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list ;;
+            url) echo "work/source_video.mp4" >> work/video_list ;;
+            drive_folder) find work/drive_videos -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list ;;
           esac
           sort -u -o work/video_list work/video_list
           test -s work/video_list
-          echo "Videos to process: $(wc -l < work/video_list)"
 
       - name: Process videos
         env:
@@ -139,139 +132,64 @@ jobs:
             CONTENT_TYPE="work/content_type_${INDEX}.json"
             FACES="work/faces_${INDEX}.json"
 
-            echo "======================================"
-            echo "Processing video $INDEX: $VIDEO"
-            echo "======================================"
-
-            if ! python scripts/transcribe.py "$VIDEO" "$TRANSCRIPT"; then
-              echo "Transcription failed for source $INDEX; skipping source and continuing."
-              continue
-            fi
-            if ! python scripts/content_detector.py "$TRANSCRIPT" "$CONTENT_TYPE"; then
-              echo "Content detection failed for source $INDEX; using general content type."
-              printf '{"content_type":"general"}\n' > "$CONTENT_TYPE"
-            fi
-            if ! python scripts/face_tracking.py "$VIDEO" "$FACES"; then
-              echo "Face tracking failed for source $INDEX; rendering without face data."
-              printf '{"fps":0,"samples":[]}\n' > "$FACES"
-            fi
-            if ! python scripts/find_moments.py "$TRANSCRIPT" "$MOMENTS_RAW"; then
-              echo "Moment detection failed for source $INDEX; continuing to fallback check."
-              printf '{"moments":[]}\n' > "$MOMENTS_RAW"
-            fi
+            if ! python scripts/transcribe.py "$VIDEO" "$TRANSCRIPT"; then continue; fi
+            if ! python scripts/content_detector.py "$TRANSCRIPT" "$CONTENT_TYPE"; then printf '{"content_type":"general"}\n' > "$CONTENT_TYPE"; fi
+            if ! python scripts/face_tracking.py "$VIDEO" "$FACES"; then printf '{"fps":0,"samples":[]}\n' > "$FACES"; fi
+            if ! python scripts/find_moments.py "$TRANSCRIPT" "$MOMENTS_RAW"; then printf '{"moments":[]}\n' > "$MOMENTS_RAW"; fi
 
             MOMENT_COUNT="$(python - "$MOMENTS_RAW" <<'PY'
-import json
-import sys
-path = sys.argv[1]
-with open(path, "r", encoding="utf-8") as f:
-    data = json.load(f)
-if isinstance(data, list):
-    moments = data
-elif isinstance(data, dict):
-    moments = data.get("moments", [])
-else:
-    moments = []
+import json,sys
+with open(sys.argv[1],encoding='utf-8') as f: data=json.load(f)
+moments=data if isinstance(data,list) else data.get('moments',[]) if isinstance(data,dict) else []
 print(len(moments))
 PY
 )"
-
             if [ "$MOMENT_COUNT" -eq 0 ]; then
               DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO" || true)"
-              SHORT_VIDEO="$(python - "$DURATION" <<'PY'
-import sys
-try:
-    duration = float(sys.argv[1])
-except (TypeError, ValueError):
-    duration = 0
-print("yes" if 0 < duration < 180 else "no")
+              python - "$MOMENTS_RAW" "$DURATION" <<'PY'
+import json,sys
+try: d=float(sys.argv[2])
+except: d=0
+if 0 < d < 180:
+  with open(sys.argv[1],'w',encoding='utf-8') as f: json.dump([{'start':0.0,'end':d,'score':0,'text':'Short-source fallback clip','fallback':True,'fallback_reason':'zero_moments_under_three_minutes'}],f,indent=2)
 PY
-)"
-              if [ "$SHORT_VIDEO" = "yes" ]; then
-                echo "No scored moments found, but source is under 3 minutes. Using the full source as the campaign fallback clip."
-                python - "$MOMENTS_RAW" "$DURATION" <<'PY'
-import json
-import sys
-path = sys.argv[1]
-duration = float(sys.argv[2])
-fallback = [{
-    "start": 0.0,
-    "end": duration,
-    "score": 0,
-    "text": "Short-source fallback clip",
-    "fallback": True,
-    "fallback_reason": "zero_moments_under_three_minutes",
-}]
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(fallback, f, indent=2, ensure_ascii=False)
-PY
-              else
-                echo "No scored moments found and source is 3 minutes or longer; skipping this source."
-                continue
-              fi
+              MOMENT_COUNT="$(python -c "import json; print(len(json.load(open('$MOMENTS_RAW'))))")"
+              [ "$MOMENT_COUNT" -gt 0 ] || continue
             fi
 
-            if ! python scripts/optimize_moments.py "$TRANSCRIPT" "$MOMENTS_RAW" "$MOMENTS"; then
-              echo "Hook optimization failed for source $INDEX; using raw moments."
-              cp "$MOMENTS_RAW" "$MOMENTS"
-            fi
+            if ! python scripts/optimize_moments.py "$TRANSCRIPT" "$MOMENTS_RAW" "$MOMENTS"; then cp "$MOMENTS_RAW" "$MOMENTS"; fi
 
-            case "$CAMPAIGN_ID" in
-              blastoff_jingle_jared_rebel_audio)
-                OUTPUT_DIR="output/rebel_audio_clips/video_${INDEX}"
-                mkdir -p "$OUTPUT_DIR"
-                if ! python scripts/make_clips.py "$VIDEO" "$MOMENTS" "$OUTPUT_DIR" "$TRANSCRIPT" "rebel_audio_logo_transparent-1 (1).png" "$CONTENT_TYPE" "$FACES"; then
-                  echo "Rendering failed for source $INDEX; continuing to next source."
-                  continue
-                fi
-                ;;
-              blastoff_warren_zeiders_md_motivator)
-                OUTPUT_DIR="output/clips/video_${INDEX}"
-                mkdir -p "$OUTPUT_DIR"
-                if ! python scripts/make_clips.py "$VIDEO" "$MOMENTS" "$OUTPUT_DIR" "$TRANSCRIPT" "$CONTENT_TYPE" "$FACES"; then
-                  echo "Rendering failed for source $INDEX; continuing to next source."
-                  continue
-                fi
-                ;;
-              *)
-                echo "Unsupported campaign: $CAMPAIGN_ID"
-                exit 1
-                ;;
-            esac
+            if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
+              OUTPUT_DIR="output/rebel_audio_clips/video_${INDEX}"
+              mkdir -p "$OUTPUT_DIR"
+              python scripts/make_clips.py "$VIDEO" "$MOMENTS" "$OUTPUT_DIR" "$TRANSCRIPT" "rebel_audio_logo_transparent-1 (1).png" "$CONTENT_TYPE" "$FACES" || continue
+            elif [ "$CAMPAIGN_ID" = "blastoff_warren_zeiders_md_motivator" ]; then
+              OUTPUT_DIR="output/clips/video_${INDEX}"
+              mkdir -p "$OUTPUT_DIR"
+              python scripts/make_clips.py "$VIDEO" "$MOMENTS" "$OUTPUT_DIR" "$TRANSCRIPT" "$CONTENT_TYPE" "$FACES" || continue
+            else
+              exit 1
+            fi
           done < work/video_list
 
       - name: Validate generated clips
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
-        shell: bash
         run: |
-          set -euo pipefail
-          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
-            CLIPS_DIR="output/rebel_audio_clips"
-          else
-            CLIPS_DIR="output/clips"
-          fi
+          if [ "$CAMPAIGN_ID" = "blastoff_jared_rebel_audio" ]; then CLIPS_DIR="output/rebel_audio_clips"; else CLIPS_DIR="output/clips"; fi
           python scripts/validate_clips.py "$CLIPS_DIR"
 
       - name: Verify campaign assets
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
-          set -euo pipefail
-          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
-            test -f "rebel_audio_logo_transparent-1 (1).png"
-          fi
+          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then test -f "rebel_audio_logo_transparent-1 (1).png"; fi
 
       - name: Generate selected campaign posting package
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
-          set -euo pipefail
-          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
-            POSTING_CLIPS_DIR="output/rebel_audio_clips"
-          else
-            POSTING_CLIPS_DIR="output/clips"
-          fi
+          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then POSTING_CLIPS_DIR="output/rebel_audio_clips"; else POSTING_CLIPS_DIR="output/clips"; fi
           python scripts/create_posting_packages.py campaigns/config.json "$POSTING_CLIPS_DIR" output/posting_packages "$CAMPAIGN_ID"
 
       - name: Upload selected campaign posting package
