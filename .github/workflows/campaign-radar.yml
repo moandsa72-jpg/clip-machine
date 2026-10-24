@@ -15,9 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run campaign radar
-        env:
-          CLIPRADAR_API_KEY: ${{ secrets.CLIPRADAR_API_KEY }}
+      - name: Run free campaign radar
         run: python3 campaign-radar/campaign_scanner.py
 
       - name: Upload radar report
