@@ -1,4 +1,5 @@
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -45,3 +46,24 @@ def mark_failed(path, stage, error):
         "failed_at": datetime.now(timezone.utc).isoformat(),
     }
     save_state(path, state)
+
+
+def main():
+    if len(sys.argv) < 3:
+        raise SystemExit("Usage: state_manager.py <is-complete|mark-complete|mark-failed> <state> <stage> [details]")
+
+    command, path, stage = sys.argv[1:4]
+    if command == "is-complete":
+        raise SystemExit(0 if is_complete(path, stage) else 1)
+    if command == "mark-complete":
+        outputs = sys.argv[4:] if len(sys.argv) > 4 else []
+        mark_complete(path, stage, outputs)
+        return
+    if command == "mark-failed":
+        mark_failed(path, stage, " ".join(sys.argv[4:]) if len(sys.argv) > 4 else "unknown error")
+        return
+    raise SystemExit(f"Unknown command: {command}")
+
+
+if __name__ == "__main__":
+    main()
