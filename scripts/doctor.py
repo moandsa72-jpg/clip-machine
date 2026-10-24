@@ -16,7 +16,10 @@ def load_campaigns():
     path = ROOT / "campaigns" / "config.json"
     with path.open(encoding="utf-8") as file:
         data = json.load(file)
-    return data.get("campaigns", []) if isinstance(data, dict) else []
+    campaigns = data.get("campaigns", {}) if isinstance(data, dict) else {}
+    if isinstance(campaigns, dict):
+        return [{"id": campaign_id, **campaign} for campaign_id, campaign in campaigns.items()]
+    return campaigns if isinstance(campaigns, list) else []
 
 
 def check_command(name):
