@@ -108,7 +108,7 @@ def build_crop_x_expression(face_data, start, end, source_width, crop_width):
         expression = f"if(lt(t,{t1:.3f}),{interpolation},{expression})"
 
     first_time, first_x = relative[0]
-    return f"if(lt(t,{first_time:.3f}),{first_x:.2f},{expression})"
+    return f"if(lt(t,{first_time:.3f}),{first_x:.2f},{expression})".replace(",", "\\,")
 
 
 def make_clip(video_path, start, end, output_path, transcript_path, logo_path=None, face_data=None):
