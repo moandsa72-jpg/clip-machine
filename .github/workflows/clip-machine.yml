@@ -52,12 +52,18 @@ jobs:
       - name: Check processing scripts
         run: python -m py_compile scripts/*.py
 
+      - name: Run pre-flight doctor
+        env:
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
+        run: python scripts/doctor.py "$CAMPAIGN_ID"
+
       - name: Create working directories
         run: |
           mkdir -p input
           mkdir -p work
           mkdir -p work/videos
           mkdir -p work/drive_videos
+          mkdir -p work/state
           mkdir -p output/clips
           mkdir -p output/rebel_audio_clips
           mkdir -p output/posting_packages
@@ -146,13 +152,46 @@ jobs:
             MOMENTS="work/moments_${INDEX}.json"
             CONTENT_TYPE="work/content_type_${INDEX}.json"
             FACES="work/faces_${INDEX}.json"
+            STATE="work/state/video_${INDEX}.json"
 
-            python scripts/transcribe.py "$VIDEO" "$TRANSCRIPT"
-            python scripts/content_detector.py "$TRANSCRIPT" "$CONTENT_TYPE"
-            python scripts/face_tracking.py "$VIDEO" "$FACES"
-            python scripts/find_moments.py "$TRANSCRIPT" "$RAW_MOMENTS"
+            if python scripts/state_manager.py is-complete "$STATE" transcribed && test -s "$TRANSCRIPT"; then
+              echo "RESUME  video $INDEX: transcription already complete"
+            else
+              if python scripts/transcribe.py "$VIDEO" "$TRANSCRIPT"; then
+                python scripts/state_manager.py mark-complete "$STATE" transcribed "$TRANSCRIPT"
+              else
+                python scripts/state_manager.py mark-failed "$STATE" transcribed "transcription failed"
+                exit 1
+              fi
+            fi
 
-            COUNT="$(python - "$RAW_MOMENTS" <<'PY'
+            if python scripts/state_manager.py is-complete "$STATE" content_detected && test -s "$CONTENT_TYPE"; then
+              echo "RESUME  video $INDEX: content detection already complete"
+            else
+              if python scripts/content_detector.py "$TRANSCRIPT" "$CONTENT_TYPE"; then
+                python scripts/state_manager.py mark-complete "$STATE" content_detected "$CONTENT_TYPE"
+              else
+                python scripts/state_manager.py mark-failed "$STATE" content_detected "content detection failed"
+                exit 1
+              fi
+            fi
+
+            if python scripts/state_manager.py is-complete "$STATE" face_tracking && test -s "$FACES"; then
+              echo "RESUME  video $INDEX: face tracking already complete"
+            else
+              if python scripts/face_tracking.py "$VIDEO" "$FACES"; then
+                python scripts/state_manager.py mark-complete "$STATE" face_tracking "$FACES"
+              else
+                python scripts/state_manager.py mark-failed "$STATE" face_tracking "face tracking failed"
+                exit 1
+              fi
+            fi
+
+            if python scripts/state_manager.py is-complete "$STATE" moments_found && test -s "$RAW_MOMENTS"; then
+              echo "RESUME  video $INDEX: moment detection already complete"
+            else
+              if python scripts/find_moments.py "$TRANSCRIPT" "$RAW_MOMENTS"; then
+                COUNT="$(python - "$RAW_MOMENTS" <<'PY'
           import json, sys
           with open(sys.argv[1], encoding='utf-8') as f:
               data = json.load(f)
@@ -161,9 +200,9 @@ jobs:
           PY
           )"
 
-            if [ "$COUNT" -eq 0 ]; then
-              DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO" || true)"
-              python - "$RAW_MOMENTS" "$DURATION" <<'PY'
+                if [ "$COUNT" -eq 0 ]; then
+                  DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO" || true)"
+                  python - "$RAW_MOMENTS" "$DURATION" <<'PY'
           import json, sys
           try:
               duration = float(sys.argv[2])
@@ -180,56 +219,89 @@ jobs:
                       'fallback_reason': 'zero_moments_under_three_minutes'
                   }], f, indent=2)
           PY
-              COUNT="$(python - "$RAW_MOMENTS" <<'PY'
+                  COUNT="$(python - "$RAW_MOMENTS" <<'PY'
           import json, sys
           with open(sys.argv[1], encoding='utf-8') as f:
               data = json.load(f)
           items = data if isinstance(data, list) else data.get('moments', []) if isinstance(data, dict) else []
           print(len(items))
           PY
-              )"
-              if [ "$COUNT" -eq 0 ]; then
-                echo "No usable moments found for $VIDEO"
-                continue
+          )"
+                  if [ "$COUNT" -eq 0 ]; then
+                    echo "No usable moments found for $VIDEO"
+                    continue
+                  fi
+                fi
+                python scripts/state_manager.py mark-complete "$STATE" moments_found "$RAW_MOMENTS"
+              else
+                python scripts/state_manager.py mark-failed "$STATE" moments_found "moment detection failed"
+                exit 1
               fi
             fi
 
-            python scripts/optimize_moments.py \
-              "$TRANSCRIPT" \
-              "$RAW_MOMENTS" \
-              "$MOMENTS" \
-              campaigns/config.json \
-              "$CAMPAIGN_ID"
+            if python scripts/state_manager.py is-complete "$STATE" moments_optimized && test -s "$MOMENTS"; then
+              echo "RESUME  video $INDEX: moment optimization already complete"
+            else
+              if python scripts/optimize_moments.py \
+                "$TRANSCRIPT" \
+                "$RAW_MOMENTS" \
+                "$MOMENTS" \
+                campaigns/config.json \
+                "$CAMPAIGN_ID"; then
+                python scripts/state_manager.py mark-complete "$STATE" moments_optimized "$MOMENTS"
+              else
+                python scripts/state_manager.py mark-failed "$STATE" moments_optimized "moment optimization failed"
+                exit 1
+              fi
+            fi
 
             case "$CAMPAIGN_ID" in
               blastoff_jingle_jared_rebel_audio)
                 OUTPUT_DIR="output/rebel_audio_clips/video_${INDEX}"
                 mkdir -p "$OUTPUT_DIR"
-                python scripts/make_clips.py \
-                  "$VIDEO" \
-                  "$MOMENTS" \
-                  "$OUTPUT_DIR" \
-                  "$TRANSCRIPT" \
-                  "rebel_audio_logo_transparent-1 (1).png" \
-                  "$CONTENT_TYPE" \
-                  "$FACES"
                 ;;
               blastoff_warren_zeiders_md_motivator)
                 OUTPUT_DIR="output/clips/video_${INDEX}"
                 mkdir -p "$OUTPUT_DIR"
-                python scripts/make_clips.py \
-                  "$VIDEO" \
-                  "$MOMENTS" \
-                  "$OUTPUT_DIR" \
-                  "$TRANSCRIPT" \
-                  "$CONTENT_TYPE" \
-                  "$FACES"
                 ;;
               *)
                 echo "Unsupported campaign: $CAMPAIGN_ID"
                 exit 1
                 ;;
             esac
+
+            if python scripts/state_manager.py is-complete "$STATE" rendered && find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*.mp4' -print -quit | grep -q .; then
+              echo "RESUME  video $INDEX: rendering already complete"
+            else
+              if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
+                if python scripts/make_clips.py \
+                  "$VIDEO" \
+                  "$MOMENTS" \
+                  "$OUTPUT_DIR" \
+                  "$TRANSCRIPT" \
+                  "rebel_audio_logo_transparent-1 (1).png" \
+                  "$CONTENT_TYPE" \
+                  "$FACES"; then
+                  python scripts/state_manager.py mark-complete "$STATE" rendered "$OUTPUT_DIR"
+                else
+                  python scripts/state_manager.py mark-failed "$STATE" rendered "clip rendering failed"
+                  exit 1
+                fi
+              else
+                if python scripts/make_clips.py \
+                  "$VIDEO" \
+                  "$MOMENTS" \
+                  "$OUTPUT_DIR" \
+                  "$TRANSCRIPT" \
+                  "$CONTENT_TYPE" \
+                  "$FACES"; then
+                  python scripts/state_manager.py mark-complete "$STATE" rendered "$OUTPUT_DIR"
+                else
+                  python scripts/state_manager.py mark-failed "$STATE" rendered "clip rendering failed"
+                  exit 1
+                fi
+              fi
+            fi
 
             echo "Finished video $INDEX"
           done < work/video_list
@@ -309,5 +381,8 @@ jobs:
             work/optimized_moments_*.json
             work/content_type_*.json
             work/faces_*.json
+            work/state/*.json
+            output/clips/validation_report.json
+            output/rebel_audio_clips/validation_report.json
           if-no-files-found: error
           retention-days: 7
