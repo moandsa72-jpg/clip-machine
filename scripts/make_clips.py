@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 
@@ -111,7 +112,7 @@ def build_crop_x_expression(face_data, start, end, source_width, crop_width):
     return f"if(lt(t,{first_time:.3f}),{first_x:.2f},{expression})".replace(",", "\\,")
 
 
-def make_clip(video_path, start, end, output_path, transcript_path, logo_path=None, face_data=None):
+def make_clip(video_path, start, end, output_path, transcript_path, logo_path=None, face_data=None, hook_text=None):
     duration = end - start
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -128,6 +129,25 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
         .replace(",", "\\,").replace("[", "\\[").replace("]", "\\]")
     )
 
+    hook_text_path = None
+    hook_filter = ""
+    if hook_text and str(hook_text).strip():
+        hook_text_path = output_path.with_suffix(".hook.txt")
+        wrapped_hook = textwrap.fill(" ".join(str(hook_text).split()), width=28)
+        hook_text_path.write_text(wrapped_hook, encoding="utf-8")
+        hook_filter_path = str(hook_text_path.resolve())
+        hook_filter_path = (
+            hook_filter_path.replace("\\", "\\\\")
+            .replace(":", "\\:").replace("'", "\\'")
+            .replace(",", "\\,").replace("[", "\\[").replace("]", "\\]")
+        )
+        hook_filter = (
+            f"drawtext=textfile='{hook_filter_path}':fontcolor=white:"
+            "fontsize=76:font=DejaVu Sans:fontcolor=white:"
+            "borderw=4:bordercolor=black:box=1:boxcolor=black@0.68:"
+            "boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2:enable='lt(t,3)'"
+        )
+
     width, height = get_video_dimensions(video_path)
     crop_width = min(width, int(height * 9 / 16))
     crop_x_expression = build_crop_x_expression(face_data, start, end, width, crop_width)
@@ -135,6 +155,7 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
     print(f"Source dimensions: {width}x{height}")
     print(f"Face-aware camera center: {static_center:.1f}")
     print(f"Smooth crop expression: {crop_x_expression}")
+    print(f"Opening hook overlay: {hook_text if hook_text else 'none'}")
 
     video_filter = (
         f"[0:v]crop={crop_width}:{height}:{crop_x_expression}:0,"
@@ -144,6 +165,11 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
         "[fg]scale=1080:1920:force_original_aspect_ratio=decrease[fgfit];"
         "[bgblur][fgfit]overlay=(W-w)/2:(H-h)/2,setsar=1[base]"
     )
+    if hook_filter:
+        video_filter += f";[base]{hook_filter}[hooked]"
+        base_label = "[hooked]"
+    else:
+        base_label = "[base]"
 
     input_args = ["-i", str(video_path)]
     if logo_path is not None:
@@ -152,12 +178,12 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
             raise FileNotFoundError(f"Logo file not found: {logo_path}")
         video_filter += (
             ";[1:v]scale=420:-1[logo];"
-            "[base][logo]overlay=(W-w)/2:70[branded];"
+            f"{base_label}[logo]overlay=(W-w)/2:70[branded];"
             f"[branded]subtitles='{subtitle_filter_path}'[outv]"
         )
         input_args = ["-i", str(video_path), "-loop", "1", "-i", str(logo_path)]
     else:
-        video_filter += f";[base]subtitles='{subtitle_filter_path}'[outv]"
+        video_filter += f";{base_label}subtitles='{subtitle_filter_path}'[outv]"
 
     command = [
         "ffmpeg", "-y", "-nostdin", "-ss", str(start), *input_args,
@@ -166,9 +192,13 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
         "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart", str(output_path),
     ]
-    run_command(command)
-    if subtitle_path.exists():
-        subtitle_path.unlink()
+    try:
+        run_command(command)
+    finally:
+        if subtitle_path.exists():
+            subtitle_path.unlink()
+        if hook_text_path and hook_text_path.exists():
+            hook_text_path.unlink()
 
 
 def main():
@@ -236,7 +266,14 @@ def main():
             continue
         output_path = output_dir / f"clip_{index:02d}.mp4"
         print(f"Creating clip {index}: {start:.2f}s–{end:.2f}s")
-        make_clip(video_path, start, end, output_path, transcript_path, logo_path, face_data)
+        hook_text = moment.get("hook_text") or ""
+        if not hook_text:
+            hook_text = " ".join(
+                str(segment.get("text", "")).strip()
+                for segment in transcript_segments
+                if float(segment.get("end", 0)) > start and float(segment.get("start", 0)) < end
+            ).strip()[:240]
+        make_clip(video_path, start, end, output_path, transcript_path, logo_path, face_data, hook_text)
 
         source_text = " ".join(
             str(segment.get("text", "")).strip()
