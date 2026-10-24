@@ -5,18 +5,22 @@ This is an isolated, read-only campaign scanner for `clip-machine`.
 ## What it does
 
 - Runs separately from the production clipping workflow.
-- Queries ClipRadar's campaign feed when `CLIPRADAR_API_KEY` is configured.
-- Filters for live clipping opportunities accepted on TikTok, YouTube, or Instagram.
-- Scores campaigns for rate, opportunity/viral signals, remaining budget, and podcast/clipping relevance.
+- Reads the **public Content Rewards Discover page**; no paid API or API key is required.
+- Filters the public Discover page for clipping campaigns on TikTok, YouTube, or Instagram.
+- Scores campaigns for rate, remaining budget, and podcast/clipping relevance.
 - Produces `campaign-radar/latest.json` as a workflow artifact.
 
-It does **not** join campaigns, spend money, submit clips, or modify the existing clip-production workflow.
+The scanner uses normal HTTPS access to a public page. It does **not** join campaigns, spend money, submit clips, or modify the existing clip-production workflow.
 
-## Setup
+## Cost
 
-Add a GitHub Actions repository secret named `CLIPRADAR_API_KEY` with a ClipRadar API key that has the `campaigns:read` scope.
+**$0.** There is no API subscription, API key, credit balance, or paid service required by this radar.
 
-The workflow can also be started manually from GitHub Actions. It is scheduled independently of the production workflow.
+The public campaign page is the source, so the scanner can only see campaigns that Content Rewards exposes publicly on Discover. Private campaigns are not visible there.
+
+## Run
+
+The workflow runs once per day and can also be started manually from GitHub Actions.
 
 ## Removal
 
