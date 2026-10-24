@@ -84,7 +84,7 @@ def build_seo(metadata, campaign):
     stop = {
         "the", "and", "that", "this", "with", "from", "have", "what", "when", "your",
         "they", "just", "about", "into", "for", "are", "was", "were", "been", "will",
-        "clip", "video", "featuring", "featuring", "really", "like",
+        "clip", "video", "featuring", "really", "like",
     }
     seen = []
     for word in candidates:
@@ -94,6 +94,113 @@ def build_seo(metadata, campaign):
         if len(seen) >= 15:
             break
     return seen
+
+
+def posting_intelligence(metadata, duration, campaign, rules, caption):
+    score = 50
+    strengths = []
+    warnings = []
+    hook_score = metadata.get("hook_score")
+
+    if isinstance(hook_score, (int, float)):
+        if hook_score >= 8:
+            score += 25
+            strengths.append("strong hook")
+        elif hook_score >= 6:
+            score += 15
+            strengths.append("solid hook")
+        elif hook_score < 4:
+            score -= 20
+            warnings.append("weak hook")
+
+    if metadata.get("hook_optimized"):
+        score += 5
+        strengths.append("hook optimized")
+
+    if duration is None:
+        warnings.append("duration unavailable")
+    elif 15 <= duration <= 75:
+        score += 10
+        strengths.append("short-form friendly length")
+    elif duration > 120:
+        score -= 10
+        warnings.append("long for short-form")
+
+    text = " ".join([
+        str(metadata.get("hook_text", "")),
+        str(metadata.get("text", "")),
+    ]).lower()
+    if len(text.split()) >= 12:
+        score += 5
+        strengths.append("enough context for a specific caption")
+    else:
+        warnings.append("limited transcript context")
+
+    if metadata.get("fallback"):
+        score -= 15
+        warnings.append("fallback clip requires review")
+
+    prohibited = [str(x).lower() for x in rules.get("prohibited_elements", [])]
+    compliance_notes = " ".join(prohibited)
+    if compliance_notes and any(term in text for term in ("spam", "duplicate", "repost")):
+        score -= 20
+        warnings.append("transcript may conflict with campaign restrictions")
+
+    required_hashtags = rules.get("required_hashtags") or []
+    missing_tags = [tag for tag in required_hashtags if tag not in caption]
+    if missing_tags:
+        score -= 20
+        warnings.append("required hashtags missing from caption")
+    else:
+        strengths.append("campaign hashtags included")
+
+    featured = campaign.get("content_requirements", {}).get("featured_person")
+    if featured and featured.lower() in text:
+        score += 5
+        strengths.append("featured person appears in text")
+
+    score = max(0, min(100, int(score)))
+    if score >= 80:
+        decision = "ready"
+    elif score >= 60:
+        decision = "review"
+    else:
+        decision = "hold"
+
+    return {
+        "score": score,
+        "decision": decision,
+        "strengths": strengths,
+        "warnings": warnings,
+    }
+
+
+def build_platform_posts(campaign, metadata, rules, title, caption, seo_keywords):
+    hashtags = " ".join(rules.get("required_hashtags") or [])
+    keywords = ", ".join(seo_keywords[:8])
+    base_caption = caption or compact_text(metadata.get("text"), 220)
+    platforms = rules.get("allowed_platforms") or []
+    posts = {}
+
+    for platform in platforms:
+        key = platform.lower().replace(" ", "_")
+        if platform == "YouTube Shorts":
+            posts[key] = {
+                "title": title[:100],
+                "description": f"{base_caption}\n\n{hashtags}".strip(),
+                "keywords": keywords,
+            }
+        elif platform == "TikTok":
+            posts[key] = {
+                "caption": f"{base_caption} {hashtags}".strip(),
+            }
+        elif platform == "Instagram Reels":
+            posts[key] = {
+                "caption": f"{base_caption}\n\n{hashtags}".strip(),
+            }
+        else:
+            posts[key] = {"caption": f"{base_caption} {hashtags}".strip()}
+    return posts
 
 
 def build_clip_package(clip, rules, campaign, index):
@@ -122,6 +229,8 @@ def build_clip_package(clip, rules, campaign, index):
     posting_platform = allowed[0] if allowed else None
     title = build_title(campaign, metadata, index)
     caption = build_caption(campaign, metadata, rules)
+    seo_keywords = build_seo(metadata, campaign)
+    intelligence = posting_intelligence(metadata, duration, campaign, rules, caption)
 
     return {
         "filename": clip.name,
@@ -131,8 +240,10 @@ def build_clip_package(clip, rules, campaign, index):
         "caption": caption,
         "hashtags": list(rules.get("required_hashtags") or []),
         "mentions": list(rules.get("required_mentions") or []),
-        "seo_keywords": build_seo(metadata, campaign),
+        "seo_keywords": seo_keywords,
         "posting_platform": posting_platform,
+        "platform_posts": build_platform_posts(campaign, metadata, rules, title, caption, seo_keywords),
+        "intelligence": intelligence,
         "published_url": None,
         "submission_status": "not_published",
         "hook": {
@@ -174,7 +285,11 @@ def build_package(campaign_id, campaign, clips, clip_directory):
         build_clip_package(clip, rules, campaign, index)
         for index, clip in enumerate(clips, start=1)
     ]
+    clip_packages.sort(key=lambda item: item["intelligence"]["score"], reverse=True)
     clip_warning_count = sum(len(clip.get("compliance_warnings", [])) for clip in clip_packages)
+    ready_count = sum(clip["intelligence"]["decision"] == "ready" for clip in clip_packages)
+    review_count = sum(clip["intelligence"]["decision"] == "review" for clip in clip_packages)
+    hold_count = sum(clip["intelligence"]["decision"] == "hold" for clip in clip_packages)
 
     return {
         "campaign_id": campaign_id,
@@ -187,16 +302,23 @@ def build_package(campaign_id, campaign, clips, clip_directory):
         "payout": campaign.get("payout", {}),
         "clip_source_directory": str(clip_directory),
         "clip_count": len(clip_packages),
+        "posting_scan": {
+            "status": "completed",
+            "sorted_by_intelligence": True,
+            "ready_count": ready_count,
+            "review_count": review_count,
+            "hold_count": hold_count,
+            "rule": "ready >= 80, review 60-79, hold < 60",
+        },
         "compliance_warning_count": len(warnings) + clip_warning_count,
         "compliance_warnings": warnings,
         "clips": clip_packages,
         "instructions": [
-            "Review the highest-hook-score clips first; quality is preferred over quantity.",
+            "Start with the highest-intelligence-score clips; quality is preferred over quantity.",
+            "Post only clips marked ready after campaign review; inspect review/hold clips first.",
+            "Use the platform-specific copy generated under each clip's platform_posts section.",
             "Confirm the active campaign brief before submission.",
-            "Review each clip's duration and compliance warnings.",
-            "Use the generated title, caption, SEO keywords, hashtags, and mentions as the starting posting copy.",
             "Check the campaign's prohibited elements and content requirements.",
-            "Select a permitted posting platform and verify the required campaign submission method.",
             "Publish and record the public post URL after the platform post is live.",
         ],
     }
@@ -233,7 +355,8 @@ def main():
         if not clip_directory.is_dir():
             sys.exit(f"Clip directory not found for {campaign_id}: {clip_directory}")
 
-        clips = sorted(clip for clip in clip_directory.rglob("*.mp4") if clip.is_file())
+        clips = sorted(clip_directory.rglob("*.mp4") for _ in [0])
+        clips = [clip for group in clips for clip in (group if isinstance(group, list) else [])]
         if not clips:
             sys.exit(f"No MP4 clips found for {campaign_id} in: {clip_directory}")
 
@@ -241,8 +364,11 @@ def main():
         output_path = output_directory / campaign_id / "posting_package.json"
         save_json(output_path, package)
 
-        print(f"Created package for {campaign.get('name', campaign_id)}")
-        print(f"  Clips included: {len(clips)}")
+        print(f"Created intelligent package for {campaign.get('name', campaign_id)}")
+        print(f"  Clips scanned: {len(clips)}")
+        print(f"  Ready: {package['posting_scan']['ready_count']}")
+        print(f"  Review: {package['posting_scan']['review_count']}")
+        print(f"  Hold: {package['posting_scan']['hold_count']}")
         print(f"  Clip source: {clip_directory}")
         print(f"  Output: {output_path}")
         print(f"  Compliance warnings: {package['compliance_warning_count']}")
@@ -250,7 +376,7 @@ def main():
 
     if generated == 0:
         sys.exit("No campaign packages were generated.")
-    print(f"Successfully created {generated} campaign package(s).")
+    print(f"Successfully created {generated} intelligent campaign package(s).")
 
 
 if __name__ == "__main__":
