@@ -96,6 +96,88 @@ def build_seo(metadata, campaign):
     return seen
 
 
+def text_lower(metadata):
+    return " ".join([
+        str(metadata.get("hook_text", "")),
+        str(metadata.get("text", "")),
+        str(metadata.get("content_type", "")),
+    ]).lower()
+
+
+def find_focus_matches(text, focus):
+    matches = []
+    for item in focus or []:
+        item_text = str(item).strip().lower()
+        if not item_text:
+            continue
+        tokens = [token for token in re.findall(r"[a-z0-9]+", item_text) if len(token) >= 3]
+        if item_text in text or (tokens and sum(token in text for token in tokens) >= max(1, len(tokens) // 2)):
+            matches.append(item)
+    return matches
+
+
+def campaign_fit(metadata, campaign):
+    requirements = campaign.get("content_requirements", {})
+    text = text_lower(metadata)
+    focus = requirements.get("content_focus") or []
+    matches = find_focus_matches(text, focus)
+    strengths = []
+    warnings = []
+    score = 0
+
+    if matches:
+        score += min(30, 10 * len(matches))
+        strengths.append("campaign focus matched: " + ", ".join(matches[:3]))
+    elif focus:
+        score -= 12
+        warnings.append("no configured campaign focus was detected in transcript text")
+
+    featured = requirements.get("featured_person")
+    if featured:
+        if featured.lower() in text:
+            score += 15
+            strengths.append(f"featured person matched: {featured}")
+        else:
+            score -= 20
+            warnings.append(f"featured person not detected: {featured}")
+
+    if requirements.get("warren_zeiders_must_be_present"):
+        if "warren zeiders" in text or ("warren" in text and "zeiders" in text):
+            score += 15
+            strengths.append("Warren Zeiders detected")
+        else:
+            score -= 25
+            warnings.append("Warren Zeiders was not detected in available transcript text")
+
+    if requirements.get("positive_philanthropy_context"):
+        positive = ("giveaway", "gift", "family", "car", "help", "helping", "surprise", "donat", "charity", "philanthrop")
+        if any(word in text for word in positive):
+            score += 10
+            strengths.append("positive/giveaway context detected")
+        else:
+            score -= 8
+            warnings.append("positive philanthropy/giveaway context not detected")
+
+    if requirements.get("opening_hook_required"):
+        hook_score = metadata.get("hook_score")
+        if isinstance(hook_score, (int, float)) and hook_score >= 6:
+            score += 8
+            strengths.append("opening hook requirement supported")
+        else:
+            score -= 8
+            warnings.append("campaign requires an opening hook; hook evidence is weak")
+
+    if requirements.get("captions_required") and metadata.get("captions_present") is False:
+        score -= 10
+        warnings.append("campaign requires captions but metadata reports captions missing")
+
+    if requirements.get("brand_logo_overlay_required") and metadata.get("logo_overlay") is False:
+        score -= 10
+        warnings.append("campaign requires logo overlay but metadata reports it missing")
+
+    return max(-50, min(50, score)), strengths, warnings
+
+
 def posting_intelligence(metadata, duration, campaign, rules, caption):
     score = 50
     strengths = []
@@ -104,14 +186,16 @@ def posting_intelligence(metadata, duration, campaign, rules, caption):
 
     if isinstance(hook_score, (int, float)):
         if hook_score >= 8:
-            score += 25
+            score += 20
             strengths.append("strong hook")
         elif hook_score >= 6:
-            score += 15
+            score += 12
             strengths.append("solid hook")
         elif hook_score < 4:
             score -= 20
             warnings.append("weak hook")
+    else:
+        warnings.append("hook score unavailable")
 
     if metadata.get("hook_optimized"):
         score += 5
@@ -126,10 +210,7 @@ def posting_intelligence(metadata, duration, campaign, rules, caption):
         score -= 10
         warnings.append("long for short-form")
 
-    text = " ".join([
-        str(metadata.get("hook_text", "")),
-        str(metadata.get("text", "")),
-    ]).lower()
+    text = text_lower(metadata)
     if len(text.split()) >= 12:
         score += 5
         strengths.append("enough context for a specific caption")
@@ -148,13 +229,13 @@ def posting_intelligence(metadata, duration, campaign, rules, caption):
         else:
             strengths.append("campaign hashtags included")
 
-    featured = campaign.get("content_requirements", {}).get("featured_person")
-    if featured and featured.lower() in text:
-        score += 5
-        strengths.append("featured person appears in text")
+    fit_score, fit_strengths, fit_warnings = campaign_fit(metadata, campaign)
+    score += fit_score
+    strengths.extend(fit_strengths)
+    warnings.extend(fit_warnings)
 
     score = max(0, min(100, int(score)))
-    if score >= 80:
+    if score >= 80 and not any("not detected" in item.lower() for item in warnings):
         decision = "ready"
     elif score >= 60:
         decision = "review"
@@ -164,6 +245,7 @@ def posting_intelligence(metadata, duration, campaign, rules, caption):
     return {
         "score": score,
         "decision": decision,
+        "campaign_fit_score": fit_score,
         "strengths": strengths,
         "warnings": warnings,
     }
@@ -179,11 +261,7 @@ def build_platform_posts(campaign, metadata, rules, title, caption, seo_keywords
     for platform in platforms:
         key = platform.lower().replace(" ", "_")
         if platform == "YouTube Shorts":
-            posts[key] = {
-                "title": title[:100],
-                "description": f"{base_caption}\n\n{hashtags}".strip(),
-                "keywords": keywords,
-            }
+            posts[key] = {"title": title[:100], "description": f"{base_caption}\n\n{hashtags}".strip(), "keywords": keywords}
         elif platform == "TikTok":
             posts[key] = {"caption": f"{base_caption} {hashtags}".strip()}
         elif platform == "Instagram Reels":
@@ -236,17 +314,8 @@ def build_clip_package(clip, rules, campaign, index):
         "intelligence": intelligence,
         "published_url": None,
         "submission_status": "not_published",
-        "hook": {
-            "score": metadata.get("hook_score", 0),
-            "text": metadata.get("hook_text", ""),
-            "optimized": bool(metadata.get("hook_optimized", False)),
-        },
-        "edit_quality": {
-            "edge_silence_trimmed": bool(metadata.get("edge_silence_trimmed", False)),
-            "face_tracking": True,
-            "captions_max_words": 4,
-            "vertical_resolution": "1080x1920",
-        },
+        "hook": {"score": metadata.get("hook_score", 0), "text": metadata.get("hook_text", ""), "optimized": bool(metadata.get("hook_optimized", False))},
+        "edit_quality": {"edge_silence_trimmed": bool(metadata.get("edge_silence_trimmed", False)), "face_tracking": True, "captions_max_words": 4, "vertical_resolution": "1080x1920"},
         "compliance_warnings": clip_warnings,
     }
 
@@ -271,10 +340,7 @@ def build_package(campaign_id, campaign, clips, clip_directory):
     if requirements.get("brand_logo_overlay_required") and not requirements.get("featured_person"):
         warnings.append("Logo overlay is required but the featured person is not configured.")
 
-    clip_packages = [
-        build_clip_package(clip, rules, campaign, index)
-        for index, clip in enumerate(clips, start=1)
-    ]
+    clip_packages = [build_clip_package(clip, rules, campaign, index) for index, clip in enumerate(clips, start=1)]
     clip_packages.sort(key=lambda item: item["intelligence"]["score"], reverse=True)
     clip_warning_count = sum(len(clip.get("compliance_warnings", [])) for clip in clip_packages)
     ready_count = sum(clip["intelligence"]["decision"] == "ready" for clip in clip_packages)
@@ -292,14 +358,7 @@ def build_package(campaign_id, campaign, clips, clip_directory):
         "payout": campaign.get("payout", {}),
         "clip_source_directory": str(clip_directory),
         "clip_count": len(clip_packages),
-        "posting_scan": {
-            "status": "completed",
-            "sorted_by_intelligence": True,
-            "ready_count": ready_count,
-            "review_count": review_count,
-            "hold_count": hold_count,
-            "rule": "ready >= 80, review 60-79, hold < 60",
-        },
+        "posting_scan": {"status": "completed", "sorted_by_intelligence": True, "ready_count": ready_count, "review_count": review_count, "hold_count": hold_count, "rule": "ready >= 80, review 60-79, hold < 60; hard campaign mismatches cannot be ready"},
         "compliance_warning_count": len(warnings) + clip_warning_count,
         "compliance_warnings": warnings,
         "clips": clip_packages,
