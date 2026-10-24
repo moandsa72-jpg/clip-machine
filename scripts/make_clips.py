@@ -76,12 +76,16 @@ def choose_face_center(face_data, start, end, width):
     return centers[len(centers) // 2]
 
 
-def build_crop_x_expression(face_data, start, end, source_width, crop_width):
+def stable_crop_points(face_data, start, end, source_width, crop_width):
+    """Build a calm camera path with a dead-zone and capped movement speed."""
     max_x = max(0, source_width - crop_width)
-    points = smooth_points(face_centers(face_data, start, end, source_width))
+    points = smooth_points(
+        face_centers(face_data, start, end, source_width),
+        window=5,
+    )
     if not points:
         center = source_width / 2
-        return str(int(max(0, min(max_x, center - crop_width / 2))))
+        return [(0.0, max(0.0, min(float(max_x), center - crop_width / 2)))]
 
     selected = []
     last_time = None
@@ -92,23 +96,51 @@ def build_crop_x_expression(face_data, start, end, source_width, crop_width):
     if selected[-1] != points[-1]:
         selected.append(points[-1])
 
-    def crop_center(center):
+    def desired_x(center):
         return max(0.0, min(float(max_x), center - crop_width / 2))
 
-    selected = [(time, crop_center(center)) for time, center in selected]
-    relative = [(time - start, x) for time, x in selected]
-    if len(relative) == 1:
-        return f"{relative[0][1]:.2f}"
+    dead_zone = crop_width * 0.12
+    max_speed = crop_width * 0.35
+    current = desired_x(selected[0][1])
+    result = [(selected[0][0] - start, current)]
 
-    expression = f"{relative[-1][1]:.2f}"
-    for index in range(len(relative) - 2, -1, -1):
-        t0, x0 = relative[index]
-        t1, x1 = relative[index + 1]
+    for time, center in selected[1:]:
+        desired = desired_x(center)
+        delta = desired - current
+        elapsed = max(0.001, time - (start + result[-1][0]))
+
+        if abs(delta) <= dead_zone:
+            target = current
+        else:
+            max_move = max_speed * elapsed
+            target = current + max(-max_move, min(max_move, delta))
+
+        if abs(target - current) >= 0.5:
+            result.append((time - start, target))
+        current = target
+
+    if result[-1][0] < selected[-1][0] - start:
+        result.append((selected[-1][0] - start, current))
+
+    return result
+
+
+def build_crop_x_expression(face_data, start, end, source_width, crop_width):
+    points = stable_crop_points(face_data, start, end, source_width, crop_width)
+    max_x = max(0, source_width - crop_width)
+    if len(points) == 1:
+        return f"{points[0][1]:.2f}"
+
+    expression = f"{points[-1][1]:.2f}"
+    for index in range(len(points) - 2, -1, -1):
+        t0, x0 = points[index]
+        t1, x1 = points[index + 1]
         span = max(0.001, t1 - t0)
         interpolation = f"({x0:.2f}+({x1 - x0:.2f})*(t-{t0:.3f})/{span:.3f})"
         expression = f"if(lt(t,{t1:.3f}),{interpolation},{expression})"
 
-    first_time, first_x = relative[0]
+    first_time, first_x = points[0]
+    first_x = max(0.0, min(float(max_x), first_x))
     return f"if(lt(t,{first_time:.3f}),{first_x:.2f},{expression})".replace(",", "\\,")
 
 
@@ -154,6 +186,7 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
     static_center = choose_face_center(face_data, start, end, width)
     print(f"Source dimensions: {width}x{height}")
     print(f"Face-aware camera center: {static_center:.1f}")
+    print("Stable face framing: dead-zone + capped movement")
     print(f"Smooth crop expression: {crop_x_expression}")
     print(f"Opening hook overlay: {hook_text if hook_text else 'none'}")
 
@@ -272,7 +305,9 @@ def main():
                 str(segment.get("text", "")).strip()
                 for segment in transcript_segments
                 if float(segment.get("end", 0)) > start and float(segment.get("start", 0)) < end
-            ).strip()[:240]
+            ).strip()
+            hook_words = hook_text.split()
+            hook_text = " ".join(hook_words[:5])
         make_clip(video_path, start, end, output_path, transcript_path, logo_path, face_data, hook_text)
 
         source_text = " ".join(
@@ -287,13 +322,15 @@ def main():
             "end": round(end, 3),
             "duration_seconds": round(end - start, 3),
             "text": source_text[:2000],
-            "hook_text": moment.get("hook_text", source_text[:240]),
+            "hook_text": moment.get("hook_text", hook_text),
+            "hook_word_count": len(str(moment.get("hook_text", hook_text)).split()),
             "hook_score": moment.get("hook_score", 0),
             "hook_optimized": bool(moment.get("hook_optimized", False)),
             "edge_silence_trimmed": bool(moment.get("edge_silence_trimmed", False)),
             "moment_score": moment.get("score", 0),
             "fallback": bool(moment.get("fallback", False)),
             "content_type": content_type.get("content_type", "general"),
+            "framing_mode": "stable_dead_zone_capped_speed",
         }
         output_path.with_suffix(".json").write_text(
             json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
