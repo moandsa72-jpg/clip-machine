@@ -51,6 +51,42 @@ def score_hook(text, focus_terms=None):
     return round(score, 2)
 
 
+def hook_tokens(text):
+    return re.findall(r"\S+", clean(text))
+
+
+def select_short_hook(text, focus_terms=None):
+    """Return a punchy 4–5 word phrase from the real transcript text."""
+    tokens = hook_tokens(text)
+    if len(tokens) <= 5:
+        return clean(text)
+
+    best = None
+    limit = min(len(tokens), 16)
+    for size in (5, 4):
+        for start in range(0, max(0, limit - size + 1)):
+            candidate = " ".join(tokens[start:start + size]).strip()
+            if not candidate:
+                continue
+            candidate_score = score_hook(candidate, focus_terms)
+
+            first_word = words(candidate)[:1]
+            if first_word and first_word[0] in WEAK_STARTS:
+                candidate_score -= 5
+            if first_word and first_word[0] in REFERENCE_STARTS:
+                candidate_score -= 3
+
+            # Prefer the requested short-hook shape, then the strongest wording.
+            ranking = (candidate_score, 1 if size == 5 else 0, -start)
+            if best is None or ranking > best[0]:
+                best = (ranking, candidate)
+
+    if best:
+        return best[1]
+
+    return " ".join(tokens[:5])
+
+
 def load_transcript(path):
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     return data.get("segments", []) if isinstance(data, dict) else []
@@ -115,7 +151,7 @@ def optimize(moment, segments, focus_terms, hook_window):
 
     original_text = clean(moment.get("text", ""))
     hook_score = score_hook(original_text, focus_terms)
-    hook_text = original_text
+    hook_source = original_text
 
     if best and not fallback:
         candidate_score, candidate_start, candidate_text = best
@@ -123,13 +159,15 @@ def optimize(moment, segments, focus_terms, hook_window):
         if candidate_score >= hook_score + 3 and proposed_duration >= 10:
             start = candidate_start
             hook_score = candidate_score
-            hook_text = candidate_text
+            hook_source = candidate_text
 
     result = dict(moment)
     result["start"] = round(start, 3)
     result["end"] = round(end, 3)
     result["hook_score"] = round(hook_score, 2)
-    result["hook_text"] = hook_text[:240]
+    result["hook_source_text"] = hook_source[:240]
+    result["hook_text"] = select_short_hook(hook_source, focus_terms)
+    result["hook_word_count"] = len(words(result["hook_text"]))
     result["hook_optimized"] = bool(best and start != original_start and not fallback)
     result["hook_deadline_seconds"] = hook_window
     result["edge_silence_trimmed"] = bool(start != original_start or end != original_end)
@@ -189,7 +227,7 @@ def main():
 
     selected.sort(key=lambda item: (float(item["start"]), float(item["end"])))
     output = {
-        "version": "hook-optimizer-v2",
+        "version": "hook-optimizer-v3",
         "campaign_id": campaign_id,
         "campaign_requirements_used": bool(requirements),
         "moments": selected,
@@ -198,6 +236,7 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(output, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"HOOK OPTIMIZATION COMPLETE: {len(selected)} moments")
+    print("Hook shape: 4–5 words")
     print(f"Campaign-aware focus: {bool(focus_terms)}")
     print(f"Hook deadline: {hook_window:.1f}s")
 
