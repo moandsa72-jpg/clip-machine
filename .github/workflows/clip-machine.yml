@@ -1,5 +1,5 @@
-# Clip Machine workflow
-name: Clip Machine - Transcribe and Find Moments
+# clip Machine workflow
+name: clip Machine - Transcribe and Find Moments
 
 on:
   workflow_dispatch:
