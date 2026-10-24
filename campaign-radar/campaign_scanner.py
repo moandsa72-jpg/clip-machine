@@ -80,21 +80,20 @@ def money(value):
 def parse_campaign(url, text):
     # Campaign cards expose compact public data such as:
     # "Clip Farm·2d Backyard Breaks$64.8K/$70.2K296$2/1K"
-    rate_match = re.search(r"\$([\d.,]+(?:[kKmM])?)(?:\s*)/(?:1K|1,000)", text)
+    rate_matches = re.findall(r"\$([\d.,]+(?:[kKmM])?)\s*/\s*(?:1K|1,000)", text)
+    rate_values = [money(value) for value in rate_matches]
+    rate_values = [value for value in rate_values if value is not None]
+    rate = max(rate_values) if rate_values else None
+
     budget_match = re.search(
         r"\$([\d.,]+(?:[kKmM])?)\s*/\s*\$([\d.,]+(?:[kKmM])?)",
         text,
     )
-    if not rate_match:
-        pool_match = re.search(r"\$([\d.,]+(?:[kKmM])?)\s+pool", text, re.I)
-        rate = None
-    else:
-        rate = money(rate_match.group(1))
-        pool_match = None
+    pool_match = re.search(r"\$([\d.,]+(?:[kKmM])?)\s+pool", text, re.I)
 
     budget_spent = money(budget_match.group(1)) if budget_match else None
     budget_total = money(budget_match.group(2)) if budget_match else None
-    if pool_match:
+    if pool_match and budget_total is None:
         budget_total = money(pool_match.group(1))
         budget_spent = None
 
@@ -228,7 +227,9 @@ def main():
     print(f"Campaign radar scanned {len(ranked)} public campaigns.")
     print(f"{len(selected)} campaigns passed the current score threshold.")
     for item in selected[:20]:
-        print(f"- [{item['opportunity_score']}] {item['name']} | ${item['rate'] or 0:g}/1K | {item['url']}")
+        rate = item["rate"]
+        rate_text = f"${rate:g}/1K" if rate is not None else "rate not listed"
+        print(f"- [{item['opportunity_score']}] {item['name']} | {rate_text} | {item['url']}")
     return 0
 
 
