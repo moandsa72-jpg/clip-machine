@@ -152,41 +152,41 @@ jobs:
             python scripts/find_moments.py "$TRANSCRIPT" "$RAW_MOMENTS"
 
             COUNT="$(python - "$RAW_MOMENTS" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding='utf-8') as f:
-    data = json.load(f)
-items = data if isinstance(data, list) else data.get('moments', []) if isinstance(data, dict) else []
-print(len(items))
-PY
-)"
+              import json, sys
+              with open(sys.argv[1], encoding='utf-8') as f:
+                  data = json.load(f)
+              items = data if isinstance(data, list) else data.get('moments', []) if isinstance(data, dict) else []
+              print(len(items))
+            PY
+            )"
 
             if [ "$COUNT" -eq 0 ]; then
               DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO" || true)"
               python - "$RAW_MOMENTS" "$DURATION" <<'PY'
-import json, sys
-try:
-    duration = float(sys.argv[2])
-except (TypeError, ValueError):
-    duration = 0
-if 0 < duration < 180:
-    with open(sys.argv[1], 'w', encoding='utf-8') as f:
-        json.dump([{
-            'start': 0.0,
-            'end': duration,
-            'score': 0,
-            'text': 'Short-source fallback clip',
-            'fallback': True,
-            'fallback_reason': 'zero_moments_under_three_minutes'
-        }], f, indent=2)
-PY
+              import json, sys
+              try:
+                  duration = float(sys.argv[2])
+              except (TypeError, ValueError):
+                  duration = 0
+              if 0 < duration < 180:
+                  with open(sys.argv[1], 'w', encoding='utf-8') as f:
+                      json.dump([{
+                          'start': 0.0,
+                          'end': duration,
+                          'score': 0,
+                          'text': 'Short-source fallback clip',
+                          'fallback': True,
+                          'fallback_reason': 'zero_moments_under_three_minutes'
+                      }], f, indent=2)
+              PY
               COUNT="$(python - "$RAW_MOMENTS" <<'PY'
-import json, sys
-with open(sys.argv[1], encoding='utf-8') as f:
-    data = json.load(f)
-items = data if isinstance(data, list) else data.get('moments', []) if isinstance(data, dict) else []
-print(len(items))
-PY
-)"
+              import json, sys
+              with open(sys.argv[1], encoding='utf-8') as f:
+                  data = json.load(f)
+              items = data if isinstance(data, list) else data.get('moments', []) if isinstance(data, dict) else []
+              print(len(items))
+              PY
+              )"
               if [ "$COUNT" -eq 0 ]; then
                 echo "No usable moments found for $VIDEO"
                 continue
