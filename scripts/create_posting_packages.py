@@ -140,19 +140,13 @@ def posting_intelligence(metadata, duration, campaign, rules, caption):
         score -= 15
         warnings.append("fallback clip requires review")
 
-    prohibited = [str(x).lower() for x in rules.get("prohibited_elements", [])]
-    compliance_notes = " ".join(prohibited)
-    if compliance_notes and any(term in text for term in ("spam", "duplicate", "repost")):
-        score -= 20
-        warnings.append("transcript may conflict with campaign restrictions")
-
-    required_hashtags = rules.get("required_hashtags") or []
-    missing_tags = [tag for tag in required_hashtags if tag not in caption]
-    if missing_tags:
-        score -= 20
-        warnings.append("required hashtags missing from caption")
-    else:
-        strengths.append("campaign hashtags included")
+    if rules.get("required_hashtags"):
+        missing_tags = [tag for tag in rules["required_hashtags"] if tag not in caption]
+        if missing_tags:
+            score -= 20
+            warnings.append("required hashtags missing from caption")
+        else:
+            strengths.append("campaign hashtags included")
 
     featured = campaign.get("content_requirements", {}).get("featured_person")
     if featured and featured.lower() in text:
@@ -191,13 +185,9 @@ def build_platform_posts(campaign, metadata, rules, title, caption, seo_keywords
                 "keywords": keywords,
             }
         elif platform == "TikTok":
-            posts[key] = {
-                "caption": f"{base_caption} {hashtags}".strip(),
-            }
+            posts[key] = {"caption": f"{base_caption} {hashtags}".strip()}
         elif platform == "Instagram Reels":
-            posts[key] = {
-                "caption": f"{base_caption}\n\n{hashtags}".strip(),
-            }
+            posts[key] = {"caption": f"{base_caption}\n\n{hashtags}".strip()}
         else:
             posts[key] = {"caption": f"{base_caption} {hashtags}".strip()}
     return posts
@@ -355,8 +345,7 @@ def main():
         if not clip_directory.is_dir():
             sys.exit(f"Clip directory not found for {campaign_id}: {clip_directory}")
 
-        clips = sorted(clip_directory.rglob("*.mp4") for _ in [0])
-        clips = [clip for group in clips for clip in (group if isinstance(group, list) else [])]
+        clips = sorted(clip for clip in clip_directory.rglob("*.mp4") if clip.is_file())
         if not clips:
             sys.exit(f"No MP4 clips found for {campaign_id} in: {clip_directory}")
 
