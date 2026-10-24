@@ -61,6 +61,7 @@ jobs:
           mkdir -p output/clips
           mkdir -p output/rebel_audio_clips
           mkdir -p output/posting_packages
+          mkdir -p output/posting_dashboard
 
       - name: Select video source
         id: source
@@ -268,11 +269,28 @@ jobs:
             output/posting_packages \
             "$CAMPAIGN_ID"
 
+      - name: Generate posting dashboard
+        env:
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
+        run: |
+          set -euo pipefail
+          python scripts/create_posting_dashboard.py \
+            "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
+            "output/posting_dashboard/$CAMPAIGN_ID"
+
       - name: Upload selected campaign posting package
         uses: actions/upload-artifact@v4
         with:
           name: campaign-posting-package
           path: output/posting_packages/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload posting dashboard
+        uses: actions/upload-artifact@v4
+        with:
+          name: posting-dashboard
+          path: output/posting_dashboard/
           if-no-files-found: error
           retention-days: 7
 
