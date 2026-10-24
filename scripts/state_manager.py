@@ -49,7 +49,7 @@ def mark_failed(path, stage, error):
 
 
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 4:
         raise SystemExit("Usage: state_manager.py <is-complete|mark-complete|mark-failed> <state> <stage> [details]")
 
     command, path, stage = sys.argv[1:4]
