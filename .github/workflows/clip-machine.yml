@@ -68,6 +68,8 @@ jobs:
           mkdir -p output/rebel_audio_clips
           mkdir -p output/posting_packages
           mkdir -p output/posting_dashboard
+          mkdir -p output/campaign_opportunities
+          mkdir -p output/posting_queue
 
       - name: Select video source
         id: source
@@ -350,6 +352,28 @@ jobs:
             "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
             "output/posting_dashboard/$CAMPAIGN_ID"
 
+      - name: Refresh free public campaign radar
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! python3 campaign-radar/campaign_scanner.py; then
+            printf '%s\n' '{"campaigns":[],"kick_campaigns":[],"errors":["public campaign scan failed"]}' > campaign-radar/latest.json
+          fi
+
+      - name: Match clips to campaign opportunities
+        env:
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
+        run: |
+          set -euo pipefail
+          python scripts/create_campaign_opportunities.py \
+            campaign-radar/latest.json \
+            "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
+            output/campaign_opportunities/opportunities.json
+          python scripts/create_posting_queue.py \
+            output/campaign_opportunities/opportunities.json \
+            "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
+            output/posting_queue/posting_queue.json
+
       - name: Upload selected campaign posting package
         uses: actions/upload-artifact@v4
         with:
@@ -363,6 +387,17 @@ jobs:
         with:
           name: posting-dashboard
           path: output/posting_dashboard/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload campaign opportunities and posting queue
+        uses: actions/upload-artifact@v4
+        with:
+          name: campaign-opportunities-and-queue
+          path: |
+            campaign-radar/latest.json
+            output/campaign_opportunities/
+            output/posting_queue/
           if-no-files-found: error
           retention-days: 7
 
