@@ -1,34 +1,49 @@
 # Campaign Radar
 
-This is an isolated, read-only campaign scanner for `clip-machine`.
+This is a read-only, zero-cost campaign scanner for `clip-machine`.
 
 ## What it does
 
-- Runs separately from the production clipping workflow.
-- Reads the **public Content Rewards Discover page**; no paid API or API key is required.
-- Filters the public Discover page for clipping campaigns on TikTok, YouTube, or Instagram.
-- Scores campaigns for rate, remaining budget, and podcast/clipping relevance.
-- Produces `campaign-radar/latest.json` as a workflow artifact.
+- Runs separately once per day and can also be refreshed by the production clipping workflow.
+- Reads public campaign listings; no paid API or API key is required.
+- Looks for clipping opportunities across public campaign indexes, including Kick/streamer opportunities when publicly listed.
+- Scores campaigns for payout, budget, and podcast/clipping relevance.
+- Produces `campaign-radar/latest.json`.
+- The production workflow uses the fresh report to match generated clips to campaign opportunities and build a posting queue.
 
-The scanner uses normal HTTPS access to a public page. It does **not** join campaigns, spend money, submit clips, or modify the existing clip-production workflow.
+The scanner uses normal HTTPS access to public pages. It does **not** join campaigns, spend money, submit clips, or publish posts.
 
 ## Cost
 
-**$0.** There is no API subscription, API key, credit balance, or paid service required by this radar.
+**$0.** There is no API subscription, API key, credit balance, paid scheduler, or pay-per-request service required by this radar.
 
-The public campaign page is the source, so the scanner can only see campaigns that Content Rewards exposes publicly on Discover. Private campaigns are not visible there.
+The scanner can only see campaigns that its public sources expose. Private campaigns are not visible.
 
-## Run
+## Posting handoff
 
-The workflow runs once per day and can also be started manually from GitHub Actions.
+The posting queue contains:
+
+- campaign URL and score
+- best matching clip
+- platform
+- platform-specific caption/title data
+- publish status
+- public post URL placeholder
+- performance fields for views, likes, comments, and shares
+
+The queue is uploaded as a workflow artifact. Publishing is handled only through supported/free platform flows; no sketchy browser bot or paid scheduler is used.
 
 ## Removal
 
-This feature is intentionally removable. To remove it later, delete only:
+The radar remains intentionally removable. To remove the radar feature and its integration, delete only:
 
 - `.github/workflows/campaign-radar.yml`
 - `campaign-radar/config.json`
 - `campaign-radar/campaign_scanner.py`
 - `campaign-radar/README.md`
+- `scripts/create_campaign_opportunities.py`
+- `scripts/create_posting_queue.py`
+- `scripts/publish_queue.py`
+- `scripts/record_performance.py`
 
-Nothing in the existing `clip-machine.yml` workflow depends on these files.
+Then remove the campaign-opportunity/queue steps from `.github/workflows/clip-machine.yml`.
