@@ -6,7 +6,7 @@
       "type": "Clipping"
     }
   },
-  "clip_pay_index_url": "https://getclippay.com/streamer-clipping-campaigns/",
+  "clip_pay_index_url": "https://getclippay.com/",
   "scoring": {
     "minimum_score_to_report": 55,
     "minimum_rate_usd_per_1k": 2.0,
