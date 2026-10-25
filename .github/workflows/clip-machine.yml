@@ -360,6 +360,12 @@ jobs:
             printf '%s\n' '{"campaigns":[],"kick_campaigns":[],"errors":["public campaign scan failed"]}' > campaign-radar/latest.json
           fi
 
+      - name: Expand free radar across additional trusted public sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 campaign-radar/expand_public_sources.py
+
       - name: Match clips to campaign opportunities
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
