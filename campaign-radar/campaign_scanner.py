@@ -194,6 +194,11 @@ def parse_anchors(page, base_url, source, rules):
         if rate is None:
             continue
         full_url = urllib.parse.urljoin(base_url, url)
+        # Only individual detail links are actionable; avoid listing/navigation links.
+        if full_url.rstrip("/") == base_url.rstrip("/"):
+            continue
+        if any(token in full_url.lower() for token in ("/discover", "/campaigns/", "/streamer-clipping-campaigns")):
+            continue
         name = clean_name(text)
         if len(name) < 3:
             continue
@@ -249,6 +254,10 @@ def parse_json_scripts(page, base_url, source, rules):
                 if name and rate is not None:
                     url = next((item.get(k) for k in ("url", "link", "href", "campaignUrl", "campaign_url") if isinstance(item.get(k), str) and item.get(k)), base_url)
                     url = urllib.parse.urljoin(base_url, url)
+                    if url.rstrip("/") == base_url.rstrip("/"):
+                        continue
+                    if any(token in url.lower() for token in ("/discover", "/campaigns/", "/streamer-clipping-campaigns")):
+                        continue
                     campaigns.append(normalize(make_campaign(name, url, source, blob, rate, parse_budget(blob)), rules))
                 stack.extend(item.values())
             elif isinstance(item, list):
@@ -257,8 +266,9 @@ def parse_json_scripts(page, base_url, source, rules):
 
 
 def parse_source(page, url, source, rules):
+    # Visible-text windows can merge neighboring cards and attach the wrong payout.
+    # Use individual detail anchors and structured JSON only.
     items = parse_anchors(page, url, source, rules)
-    items.extend(parse_visible(page, url, source, rules))
     items.extend(parse_json_scripts(page, url, source, rules))
     deduped = {}
     for item in items:
