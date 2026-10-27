@@ -1,0 +1,17 @@
+{
+  "source": {
+    "discover_url": "https://contentrewards.com/c/discover",
+    "query": {
+      "platforms": "youtube,tiktok,instagram",
+      "type": "Clipping"
+    }
+  },
+  "clip_pay_index_url": "https://getclippay.com/",
+  "scoring": {
+    "minimum_score_to_report": 55,
+    "minimum_rate_usd_per_1k": 2.0,
+    "preferred_categories": ["podcasting", "podcast", "entertainment", "creator", "interview", "show"],
+    "preferred_tags": ["podcast", "podcasting", "clips", "clipping", "shorts", "viral"],
+    "preferred_targets": ["tiktok", "youtube", "instagram"]
+  }
+}
