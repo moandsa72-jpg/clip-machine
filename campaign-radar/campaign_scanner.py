@@ -50,6 +50,89 @@ class LinkParser(HTMLParser):
             self._parts = []
 
 
+
+class CampaignCardParser(HTMLParser):
+    """Associate text and links within one DOM ancestor, never across sibling cards."""
+    VOID_TAGS = {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.cards = []
+
+    def handle_starttag(self, tag, attrs):
+        node = {"tag": tag, "attrs": dict(attrs), "parts": []}
+        self.stack.append(node)
+        if tag in self.VOID_TAGS:
+            self.stack.pop()
+
+    def handle_startendtag(self, tag, attrs):
+        return
+
+    def handle_data(self, data):
+        for node in self.stack:
+            if node["tag"] not in {"script", "style", "noscript"}:
+                node["parts"].append(data)
+
+    def handle_endtag(self, tag):
+        idx = next((i for i in range(len(self.stack) - 1, -1, -1)
+                    if self.stack[i]["tag"] == tag), None)
+        if idx is None:
+            return
+        closed = self.stack[idx:]
+        if tag == "a":
+            href = closed[-1]["attrs"].get("href", "")
+            anchor_text = " ".join(" ".join(closed[-1]["parts"]).split())
+            if href:
+                # Walk from the nearest parent outward. First ancestor containing
+                # a rate and a meaningful title is the smallest safe card context.
+                for parent in reversed(self.stack[:idx]):
+                    blob = " ".join(" ".join(parent["parts"]).split())
+                    if parse_rate(blob) is not None:
+                        title = clean_name(blob)
+                        if len(title) >= 3:
+                            self.cards.append({
+                                "href": href, "anchor_text": anchor_text, "text": blob,
+                                "name": title,
+                            })
+                            break
+        del self.stack[idx:]
+
+
+def parse_campaign_cards(page, base_url, source, rules):
+    parser = CampaignCardParser()
+    parser.feed(page)
+    campaigns = []
+    for card in parser.cards:
+        full_url = urllib.parse.urljoin(base_url, card["href"])
+        if full_url.rstrip("/") == base_url.rstrip("/"):
+            continue
+        if any(token in full_url.lower() for token in (
+            "/discover", "/campaigns/", "/streamer-clipping-campaigns"
+        )):
+            continue
+        rate = parse_rate(card["text"])
+        if rate is None:
+            continue
+        name = card["name"]
+        # If the ancestor is mostly UI labels, fall back to the campaign title
+        # portion before the payout and platform metadata.
+        name = re.split(
+            r"\\$[\\d.,]+(?:[kKmM])?(?:\\s*[–-]\\s*\\$[\\d.,]+(?:[kKmM])?)?\\s*/\\s*(?:1K|1,000|1000|1M)",
+            name, maxsplit=1, flags=re.I
+        )[0].strip(" -|:")
+        name = re.sub(r"^(?:brand|streamer|creator)\\s+", "", name, flags=re.I).strip()
+        if len(name) < 3:
+            continue
+        campaigns.append(normalize(make_campaign(
+            name, full_url, source, card["text"], rate, parse_budget(card["text"])
+        ), rules))
+    return campaigns
+
+
 def load_config(path=None):
     config_path = Path(path) if path else CONFIG_PATH
     if not config_path.is_absolute():
@@ -293,6 +376,7 @@ def parse_source(page, url, source, rules):
     # Avoid broad text windows: they can merge neighboring cards and misassign rates.
     # Diagnostics show whether a page has payout markers the current safe parsers miss.
     items = parse_anchors(page, url, source, rules)
+    items.extend(parse_campaign_cards(page, url, source, rules))
     items.extend(parse_json_scripts(page, url, source, rules))
     deduped = {}
     for item in items:
