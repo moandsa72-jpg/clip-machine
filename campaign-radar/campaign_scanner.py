@@ -225,13 +225,55 @@ def parse_budget_left_percent(text):
 def is_campaign_url(url):
     """Reject account, marketing, and contact pages as non-campaign opportunities."""
     path = urllib.parse.urlparse(url).path.lower().rstrip("/")
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").lower()
     blocked = (
-        "/signup", "/sign-up", "/login", "/register", "/contact",
+        "/signup", "/sign-up", "/start", "/login", "/register", "/contact",
         "/affiliates", "/affiliate", "/about", "/pricing", "/privacy",
-        "/terms", "/blog", "/discover", "/campaigns",
+        "/terms", "/blog", "/discover", "/campaigns", "/dashboard",
         "/streamer-clipping-campaigns",
     )
+    if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}:
+        return True
     return any(path == token or path.startswith(token + "/") for token in blocked)
+
+
+ARTIFACT_NAME_RE = re.compile(
+    r"@keyframes|@media|@supports|@context|schema\\.org|FAQPage|data-hero-frame|"
+    r"<!doctype|<html|<script|application/ld\\+json|^\\s*[{\\[]",
+    re.I,
+)
+
+
+def validate_campaign(campaign):
+    """Hard quality gate: reject page artifacts and rates not tied to one campaign."""
+    name = str(campaign.get("name") or "").strip()
+    url = str(campaign.get("url") or "")
+    raw = str(campaign.get("raw_text") or "")
+    host = (urllib.parse.urlparse(url).hostname or "").lower()
+
+    if len(name) < 3 or ARTIFACT_NAME_RE.search(name):
+        return "rejected", "name looks like CSS, JSON-LD, markup, or page boilerplate"
+    if is_campaign_url(url):
+        return "rejected", "URL is a signup, marketing, dashboard, or video page"
+    if host.endswith("contentrewards.com"):
+        path = urllib.parse.urlparse(url).path
+        if not re.search(r"/c/campaigns/[0-9a-f-]{20,}", path, re.I):
+            return "rejected", "Content Rewards URL is not an individual campaign UUID"
+    elif not re.search(r"/(?:campaign|campaigns|clip|clipping|offer|opportunit|[0-9a-f]{8}-[0-9a-f-]{20,})(?:/|$)", urllib.parse.urlparse(url).path, re.I):
+        return "rejected", "URL does not resemble an individual campaign or offer"
+    if ARTIFACT_NAME_RE.search(raw):
+        return "rejected", "raw text contains page-code artifacts"
+    rates = re.findall(
+        r"\\$[\\d.,]+(?:[kKmM])?(?:\\s*[–-]\\s*\\$[\\d.,]+(?:[kKmM])?)?\\s*/\\s*(?:1K|1,000|1000|1M)",
+        raw, re.I
+    )
+    if len(rates) != 1:
+        return "low_confidence", "raw text does not contain exactly one payout rate"
+    rate = campaign.get("rate")
+    if rate is None or parse_rate(raw) != rate:
+        return "low_confidence", "selected payout rate does not match campaign text"
+    return "valid", None
 
 
 def parse_platforms(text):
@@ -301,7 +343,11 @@ def score_campaign(campaign, rules):
 
 
 def normalize(campaign, rules):
-    score, reasons = score_campaign(campaign, rules)
+    validation_status, rejection_reason = validate_campaign(campaign)
+    campaign["validation_status"] = validation_status
+    campaign["confidence"] = "high" if validation_status == "valid" else "low"
+    campaign["rejection_reason"] = rejection_reason
+    score, reasons = score_campaign(campaign, rules) if validation_status == "valid" else (0, [rejection_reason])
     campaign["opportunity_score"] = score
     campaign["reasons"] = reasons
     return campaign
@@ -462,8 +508,8 @@ def main():
             print(f"{source_name}: scan failed: {exc}")
         source_diagnostics.append(status)
     ranked.sort(key=lambda x: x["opportunity_score"], reverse=True)
-    selected = [x for x in ranked if x["opportunity_score"] >= rules["minimum_score_to_report"]]
-    kick = [x for x in ranked if "kick" in x.get("name", "").lower() or "kick" in x.get("description", "").lower()]
+    selected = [x for x in ranked if x.get("validation_status") == "valid" and x["opportunity_score"] >= rules["minimum_score_to_report"]]
+    kick = [x for x in selected if "kick" in x.get("name", "").lower() or "kick" in x.get("description", "").lower()]
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sources": [url for _, url in sources],
