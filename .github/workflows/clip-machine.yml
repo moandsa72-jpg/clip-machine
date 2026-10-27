@@ -151,12 +151,14 @@ jobs:
         run: |
           set -euo pipefail
           INDEX=0
+
           while IFS= read -r VIDEO; do
             INDEX=$((INDEX + 1))
             echo "======================================"
             echo "Processing video $INDEX"
             echo "Video: $VIDEO"
             echo "======================================"
+
             TRANSCRIPT="work/transcript_${INDEX}.json"
             RAW_MOMENTS="work/moments_raw_${INDEX}.json"
             MOMENTS="work/moments_${INDEX}.json"
@@ -219,7 +221,14 @@ jobs:
               duration = 0
           if 0 < duration < 180:
               with open(sys.argv[1], 'w', encoding='utf-8') as f:
-                  json.dump([{'start': 0.0, 'end': duration, 'score': 0, 'text': 'Short-source fallback clip', 'fallback': True, 'fallback_reason': 'zero_moments_under_three_minutes'}], f, indent=2)
+                  json.dump([{
+                      'start': 0.0,
+                      'end': duration,
+                      'score': 0,
+                      'text': 'Short-source fallback clip',
+                      'fallback': True,
+                      'fallback_reason': 'zero_moments_under_three_minutes'
+                  }], f, indent=2)
           PY
                   COUNT="$(python - "$RAW_MOMENTS" <<'PY'
           import json, sys
@@ -244,7 +253,12 @@ jobs:
             if python scripts/state_manager.py is-complete "$STATE" moments_optimized && test -s "$MOMENTS"; then
               echo "RESUME  video $INDEX: moment optimization already complete"
             else
-              if python scripts/optimize_moments.py "$TRANSCRIPT" "$RAW_MOMENTS" "$MOMENTS" campaigns/config.json "$CAMPAIGN_ID"; then
+              if python scripts/optimize_moments.py \
+                "$TRANSCRIPT" \
+                "$RAW_MOMENTS" \
+                "$MOMENTS" \
+                campaigns/config.json \
+                "$CAMPAIGN_ID"; then
                 python scripts/state_manager.py mark-complete "$STATE" moments_optimized "$MOMENTS"
               else
                 python scripts/state_manager.py mark-failed "$STATE" moments_optimized "moment optimization failed"
@@ -271,11 +285,35 @@ jobs:
               echo "RESUME  video $INDEX: rendering already complete"
             else
               if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
-                python scripts/make_clips.py "$VIDEO" "$MOMENTS" "$OUTPUT_DIR" "$TRANSCRIPT" "rebel_audio_logo_transparent-1 (1).png" "$CONTENT_TYPE" "$FACES" && python scripts/state_manager.py mark-complete "$STATE" rendered "$OUTPUT_DIR" || { python scripts/state_manager.py mark-failed "$STATE" rendered "clip rendering failed"; exit 1; }
+                if python scripts/make_clips.py \
+                  "$VIDEO" \
+                  "$MOMENTS" \
+                  "$OUTPUT_DIR" \
+                  "$TRANSCRIPT" \
+                  "rebel_audio_logo_transparent-1 (1).png" \
+                  "$CONTENT_TYPE" \
+                  "$FACES"; then
+                  python scripts/state_manager.py mark-complete "$STATE" rendered "$OUTPUT_DIR"
+                else
+                  python scripts/state_manager.py mark-failed "$STATE" rendered "clip rendering failed"
+                  exit 1
+                fi
               else
-                python scripts/make_clips.py "$VIDEO" "$MOMENTS" "$OUTPUT_DIR" "$TRANSCRIPT" "$CONTENT_TYPE" "$FACES" && python scripts/state_manager.py mark-complete "$STATE" rendered "$OUTPUT_DIR" || { python scripts/state_manager.py mark-failed "$STATE" rendered "clip rendering failed"; exit 1; }
+                if python scripts/make_clips.py \
+                  "$VIDEO" \
+                  "$MOMENTS" \
+                  "$OUTPUT_DIR" \
+                  "$TRANSCRIPT" \
+                  "$CONTENT_TYPE" \
+                  "$FACES"; then
+                  python scripts/state_manager.py mark-complete "$STATE" rendered "$OUTPUT_DIR"
+                else
+                  python scripts/state_manager.py mark-failed "$STATE" rendered "clip rendering failed"
+                  exit 1
+                fi
               fi
             fi
+
             echo "Finished video $INDEX"
           done < work/video_list
 
@@ -284,7 +322,11 @@ jobs:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
           set -euo pipefail
-          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then CLIPS_DIR="output/rebel_audio_clips"; else CLIPS_DIR="output/clips"; fi
+          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
+            CLIPS_DIR="output/rebel_audio_clips"
+          else
+            CLIPS_DIR="output/clips"
+          fi
           python scripts/validate_clips.py "$CLIPS_DIR"
 
       - name: Verify campaign assets
@@ -299,15 +341,25 @@ jobs:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
           set -euo pipefail
-          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then POSTING_CLIPS_DIR="output/rebel_audio_clips"; else POSTING_CLIPS_DIR="output/clips"; fi
-          python scripts/create_posting_packages.py campaigns/config.json "$POSTING_CLIPS_DIR" output/posting_packages "$CAMPAIGN_ID"
+          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
+            POSTING_CLIPS_DIR="output/rebel_audio_clips"
+          else
+            POSTING_CLIPS_DIR="output/clips"
+          fi
+          python scripts/create_posting_packages.py \
+            campaigns/config.json \
+            "$POSTING_CLIPS_DIR" \
+            output/posting_packages \
+            "$CAMPAIGN_ID"
 
       - name: Generate posting dashboard
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
           set -euo pipefail
-          python scripts/create_posting_dashboard.py "output/posting_packages/$CAMPAIGN_ID/posting_package.json" "output/posting_dashboard/$CAMPAIGN_ID"
+          python scripts/create_posting_dashboard.py \
+            "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
+            "output/posting_dashboard/$CAMPAIGN_ID"
 
       - name: Refresh free public campaign radar
         shell: bash
@@ -328,8 +380,14 @@ jobs:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
           set -euo pipefail
-          python scripts/create_campaign_opportunities.py campaign-radar/latest.json "output/posting_packages/$CAMPAIGN_ID/posting_package.json" output/campaign_opportunities/opportunities.json
-          python scripts/create_posting_queue.py output/campaign_opportunities/opportunities.json "output/posting_packages/$CAMPAIGN_ID/posting_package.json" output/posting_queue/posting_queue.json
+          python scripts/create_campaign_opportunities.py \
+            campaign-radar/latest.json \
+            "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
+            output/campaign_opportunities/opportunities.json
+          python scripts/create_posting_queue.py \
+            output/campaign_opportunities/opportunities.json \
+            "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
+            output/posting_queue/posting_queue.json
 
       - name: Upload selected campaign posting package
         uses: actions/upload-artifact@v4
