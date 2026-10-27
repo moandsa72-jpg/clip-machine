@@ -137,7 +137,7 @@ def parse_campaign_cards(page, base_url, source, rules):
         if len(name) < 3:
             continue
         campaigns.append(normalize(make_campaign(
-            name, full_url, source, card["text"], rate, parse_budget(card["text"])
+            name, full_url, source, card["text"], rate, None)
         ), rules))
     return campaigns
 
@@ -392,7 +392,7 @@ def parse_anchors(page, base_url, source, rules):
         name = clean_name(text)
         if len(name) < 3:
             continue
-        campaigns.append(normalize(make_campaign(name, full_url, source, text, rate, parse_budget(text)), rules))
+        campaigns.append(normalize(make_campaign(name, full_url, source, text, rate, None), rules))
     return campaigns
 
 
@@ -414,7 +414,7 @@ def parse_visible(page, base_url, source, rules):
         name = clean_name(parts[-1] if parts else prefix)
         if len(name) < 3:
             continue
-        campaigns.append(normalize(make_campaign(name, base_url, source, blob, rate, parse_budget(blob)), rules))
+        campaigns.append(normalize(make_campaign(name, base_url, source, blob, rate, None), rules))
     return campaigns
 
 
@@ -448,7 +448,7 @@ def parse_json_scripts(page, base_url, source, rules):
                         continue
                     if is_campaign_url(url):
                         continue
-                    campaigns.append(normalize(make_campaign(name, url, source, blob, rate, parse_budget(blob)), rules))
+                    campaigns.append(normalize(make_campaign(name, url, source, blob, rate, None), rules))
                 stack.extend(item.values())
             elif isinstance(item, list):
                 stack.extend(item)
