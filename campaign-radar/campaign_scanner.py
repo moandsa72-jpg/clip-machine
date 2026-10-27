@@ -91,14 +91,25 @@ class CampaignCardParser(HTMLParser):
                 # a rate and a meaningful title is the smallest safe card context.
                 for parent in reversed(self.stack[:idx]):
                     blob = " ".join(" ".join(parent["parts"]).split())
-                    if parse_rate(blob) is not None:
-                        title = clean_name(blob)
-                        if len(title) >= 3:
-                            self.cards.append({
-                                "href": href, "anchor_text": anchor_text, "text": blob,
-                                "name": title,
-                            })
-                            break
+                    attrs = parent["attrs"]
+                    marker = " ".join([str(attrs.get("class", "")), str(attrs.get("id", ""))]).lower()
+                    # Only use a bounded, card-like ancestor. Generic page wrappers
+                    # accumulate neighboring campaigns and must never supply a rate.
+                    if not re.search(r"(?:campaign|offer|listing|result|opportunit|card|tile|item)", marker):
+                        continue
+                    rate_markers = re.findall(
+                        r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)",
+                        blob, re.I
+                    )
+                    if len(rate_markers) != 1:
+                        continue
+                    title = clean_name(anchor_text)
+                    if len(title) >= 3 and not ARTIFACT_NAME_RE.search(title):
+                        self.cards.append({
+                            "href": href, "anchor_text": anchor_text, "text": blob,
+                            "name": title,
+                        })
+                        break
         del self.stack[idx:]
 
 
@@ -122,7 +133,7 @@ def parse_campaign_cards(page, base_url, source, rules):
             r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)",
             name, maxsplit=1, flags=re.I
         )[0].strip(" -|:")
-        name = re.sub(r"^(?:brand|streamer|creator)\\s+", "", name, flags=re.I).strip()
+        name = re.sub(r"^(?:brand|streamer|creator)\s+", "", name, flags=re.I).strip()
         if len(name) < 3:
             continue
         campaigns.append(normalize(make_campaign(
@@ -198,16 +209,22 @@ def parse_rate(text):
     return max(values) if values else None
 
 
-def parse_budget(text):
-    """Extract currency amounts only; percentages are stored separately."""
-    matches = re.findall(
-        r"(?:budget\s*(?:left|remaining)?|left|pool)\s*[:\-]?\s*\$([\d.,]+(?:[kKmM])?)",
-        text,
-        re.I,
+def parse_budgets(text):
+    """Return (total budget, remaining budget) only when wording is explicit."""
+    total_patterns = (
+        r"(?:total\s+)?budget\s*(?:of|is|:|-)\s*\$([\d.,]+(?:[kKmM])?)",
+        r"\$([\d.,]+(?:[kKmM])?)\s+(?:total\s+)?budget\b",
+        r"\$([\d.,]+(?:[kKmM])?)\s+pool\b",
     )
-    values = [money(x) for x in matches]
-    values = [x for x in values if x is not None]
-    return max(values) if values else None
+    left_patterns = (
+        r"(?:budget\s*)?(?:left|remaining)\s*[:\-]?\s*\$([\d.,]+(?:[kKmM])?)",
+        r"\$([\d.,]+(?:[kKmM])?)\s+(?:budget\s*)?(?:left|remaining)\b",
+    )
+    def extract(patterns):
+        values = [money(value) for pattern in patterns for value in re.findall(pattern, text, re.I)]
+        values = [value for value in values if value is not None]
+        return max(values) if values else None
+    return extract(total_patterns), extract(left_patterns)
 
 
 def parse_budget_left_percent(text):
@@ -240,7 +257,7 @@ def is_campaign_url(url):
 
 ARTIFACT_NAME_RE = re.compile(
     r"@keyframes|@media|@supports|@context|schema\.org|FAQPage|data-hero-frame|"
-    r"<!doctype|<html|<script|application/ld\+json|^\s*[{[]",
+    r"<!doctype|<html|<script|application/ld\+json|^\s*(?:\{|\[)",
     re.I,
 )
 
@@ -262,8 +279,11 @@ def validate_campaign(campaign):
             return "rejected", "Content Rewards URL is not an individual campaign UUID"
     elif not re.search(r"/(?:campaign|campaigns|clip|clipping|offer|opportunit|[0-9a-f]{8}-[0-9a-f-]{20,})(?:/|$)", urllib.parse.urlparse(url).path, re.I):
         return "rejected", "URL does not resemble an individual campaign or offer"
-    if ARTIFACT_NAME_RE.search(raw):
-        return "rejected", "raw text contains page-code artifacts"
+    # Raw campaign text can contain benign schema metadata. Reject only when
+    # the candidate itself looks like code/markup, not because one metadata key
+    # occurs somewhere inside otherwise useful campaign text.
+    if re.search(r"@keyframes|@media|@supports|data-hero-frame|<!doctype|<html|<script", raw, re.I):
+        return "rejected", "raw text contains CSS or HTML artifacts"
     rates = re.findall(
         r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)",
         raw, re.I
@@ -289,6 +309,9 @@ def clean_name(text):
 
 
 def make_campaign(name, url, source, text, rate, budget_left=None):
+    budget, explicit_budget_left = parse_budgets(text)
+    if explicit_budget_left is not None:
+        budget_left = explicit_budget_left
     canonical_url = urllib.parse.urlunsplit(urllib.parse.urlsplit(url)._replace(query="", fragment="")).rstrip("/")
     stable_key = f"{source}|{canonical_url.lower()}"
     campaign_id = f"{source.lower().replace(' ', '-')}-{__import__('hashlib').sha256(stable_key.encode('utf-8')).hexdigest()[:12]}"
@@ -299,7 +322,7 @@ def make_campaign(name, url, source, text, rate, budget_left=None):
         "source_platform": source,
         "content_type": "clipping",
         "rate": rate,
-        "budget": None,
+        "budget": budget,
         "budget_left": budget_left,
         "budget_left_percent": parse_budget_left_percent(text),
         "platforms": parse_platforms(text),
@@ -508,6 +531,11 @@ def main():
             print(f"{source_name}: scan failed: {exc}")
         source_diagnostics.append(status)
     ranked.sort(key=lambda x: x["opportunity_score"], reverse=True)
+    rejected = [x for x in ranked if x.get("validation_status") != "valid"]
+    rejection_counts = {}
+    for item in rejected:
+        reason = item.get("rejection_reason") or item.get("validation_status") or "unknown"
+        rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
     selected = [x for x in ranked if x.get("validation_status") == "valid" and x["opportunity_score"] >= rules["minimum_score_to_report"]]
     kick = [x for x in selected if "kick" in x.get("name", "").lower() or "kick" in x.get("description", "").lower()]
     report = {
@@ -515,6 +543,12 @@ def main():
         "sources": [url for _, url in sources],
         "scanned": len(ranked),
         "selected": len(selected),
+        "rejected_candidates": len(rejected),
+        "rejection_summary": rejection_counts,
+        "rejected_examples": [
+            {key: item.get(key) for key in ("name", "url", "source_platform", "validation_status", "rejection_reason", "rate")}
+            for item in rejected[:25]
+        ],
         "kick_campaigns": kick,
         "campaigns": selected,
         "errors": errors,
