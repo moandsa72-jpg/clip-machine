@@ -11,9 +11,12 @@ configured. No third-party scheduler or paid API is used.
 import argparse
 import json
 import os
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+CHUNK_SIZE = 8 * 1024 * 1024
 
 
 def load(path):
@@ -60,15 +63,44 @@ def youtube_upload(item):
     if not upload_url:
         raise RuntimeError("YouTube did not return an upload URL")
 
+    total = video_path.stat().st_size
+    offset = 0
     with video_path.open("rb") as file:
-        upload = urllib.request.Request(
-            upload_url,
-            data=file.read(),
-            method="PUT",
-            headers={"Content-Type": "video/mp4"},
-        )
-    with urllib.request.urlopen(upload, timeout=900) as response:
-        result = json.loads(response.read().decode("utf-8"))
+        while offset < total:
+            chunk = file.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            end = offset + len(chunk) - 1
+            upload = urllib.request.Request(
+                upload_url,
+                data=chunk,
+                method="PUT",
+                headers={
+                    "Content-Type": "video/mp4",
+                    "Content-Length": str(len(chunk)),
+                    "Content-Range": f"bytes {offset}-{end}/{total}",
+                },
+            )
+            try:
+                response = urllib.request.urlopen(upload, timeout=300)
+                payload = response.read().decode("utf-8")
+                if response.status in (200, 201):
+                    result = json.loads(payload)
+                    offset = total
+                    break
+                offset = end + 1
+            except urllib.error.HTTPError as exc:
+                if exc.code != 308:
+                    raise
+                range_header = exc.headers.get("Range", "")
+                match = range_header.rsplit("-", 1)[-1] if "-" in range_header else ""
+                try:
+                    offset = int(match) + 1
+                except ValueError:
+                    offset = end + 1
+    else:
+        result = {}
+
     video_id = result.get("id")
     if not video_id:
         raise RuntimeError("YouTube upload completed without a video id")
@@ -92,7 +124,6 @@ def main():
         if not args.execute:
             results.append(result)
             continue
-
         if args.platform == "youtube_shorts":
             try:
                 url = youtube_upload(item)
@@ -107,7 +138,6 @@ def main():
             item["status"] = "manual_publish_required"
             result.update({"status": "manual_publish_required", "reason": "Use the platform's official posting flow; no paid scheduler or unsupported automation is used."})
         results.append(result)
-
     data["last_publish_run"] = now
     save(args.queue, data)
     print(json.dumps({"results": results}, indent=2, ensure_ascii=False))
