@@ -18,8 +18,8 @@ def load(path, default):
         return default
 
 
-def tokens(text):
-    return {x for x in re.findall(r"[a-z0-9]+", str(text or "").lower()) if len(x) >= 4}
+def normalize_platform(value):
+    return str(value or "").strip().lower().replace(" ", "_")
 
 
 def main():
@@ -33,20 +33,24 @@ def main():
     by_campaign = defaultdict(list)
     by_platform = defaultdict(list)
     by_hook = defaultdict(list)
+
     for entry in entries:
         views = max(0, int(entry.get("views") or 0))
         if views <= 0:
             continue
-        likes = max(0, int(entry.get("likes") or 0))
-        comments = max(0, int(entry.get("comments") or 0))
-        shares = max(0, int(entry.get("shares") or 0))
-        engagement = (likes + 2 * comments + 3 * shares) / views * 1000
-        by_campaign[(entry.get("campaign_id"), entry.get("platform"))].append(engagement)
-        by_platform[entry.get("platform")].append(engagement)
+        engagement = entry.get("engagement_per_1k")
+        if not isinstance(engagement, (int, float)):
+            likes = max(0, int(entry.get("likes") or 0))
+            comments = max(0, int(entry.get("comments") or 0))
+            shares = max(0, int(entry.get("shares") or 0))
+            engagement = (likes + 2 * comments + 3 * shares) / views * 1000
+        platform = normalize_platform(entry.get("platform"))
+        by_campaign[(entry.get("campaign_id"), platform)].append(float(engagement))
+        by_platform[platform].append(float(engagement))
         hook_score = entry.get("hook_score")
         if isinstance(hook_score, (int, float)):
             bucket = "strong" if hook_score >= 8 else "solid" if hook_score >= 6 else "weak"
-            by_hook[bucket].append(engagement)
+            by_hook[bucket].append(float(engagement))
 
     global_values = [v for values in by_platform.values() for v in values]
     baseline = sum(global_values) / len(global_values) if global_values else None
@@ -57,7 +61,8 @@ def main():
         signals = []
         campaign_id = package.get("campaign_id")
         for platform in (clip.get("platform_posts") or {}).keys():
-            values = by_campaign.get((campaign_id, platform)) or by_platform.get(platform, [])
+            key = normalize_platform(platform)
+            values = by_campaign.get((campaign_id, key)) or by_platform.get(key, [])
             if values and baseline is not None:
                 average = sum(values) / len(values)
                 delta = max(-8, min(8, (average / baseline - 1) * 8))
@@ -77,11 +82,7 @@ def main():
             old_score = int(intelligence.get("score", 0) or 0)
             new_score = max(0, min(100, round(old_score + adjustment)))
             intelligence["score"] = new_score
-            intelligence["performance_learning"] = {
-                "adjustment": round(adjustment, 2),
-                "signals": signals,
-                "sample_count": len(entries),
-            }
+            intelligence["performance_learning"] = {"adjustment": round(adjustment, 2), "signals": signals, "sample_count": len(entries)}
             if new_score >= 80 and intelligence.get("decision") != "hold" and not any("not detected" in str(w).lower() for w in intelligence.get("warnings", [])):
                 intelligence["decision"] = "ready"
             elif new_score >= 60 and intelligence.get("decision") == "hold":
