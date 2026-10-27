@@ -65,6 +65,7 @@ def youtube_upload(item):
 
     total = video_path.stat().st_size
     offset = 0
+    result = {}
     with video_path.open("rb") as file:
         while offset < total:
             chunk = file.read(CHUNK_SIZE)
@@ -98,8 +99,6 @@ def youtube_upload(item):
                     offset = int(match) + 1
                 except ValueError:
                     offset = end + 1
-    else:
-        result = {}
 
     video_id = result.get("id")
     if not video_id:
