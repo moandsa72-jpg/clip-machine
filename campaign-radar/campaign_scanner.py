@@ -110,9 +110,7 @@ def parse_campaign_cards(page, base_url, source, rules):
         full_url = urllib.parse.urljoin(base_url, card["href"])
         if full_url.rstrip("/") == base_url.rstrip("/"):
             continue
-        if any(token in full_url.lower() for token in (
-            "/discover", "/campaigns/", "/streamer-clipping-campaigns"
-        )):
+        if is_campaign_url(full_url):
             continue
         rate = parse_rate(card["text"])
         if rate is None:
@@ -201,6 +199,7 @@ def parse_rate(text):
 
 
 def parse_budget(text):
+    """Extract currency amounts only; percentages are stored separately."""
     matches = re.findall(
         r"(?:budget\s*(?:left|remaining)?|left|pool)\s*[:\-]?\s*\$([\d.,]+(?:[kKmM])?)",
         text,
@@ -209,6 +208,30 @@ def parse_budget(text):
     values = [money(x) for x in matches]
     values = [x for x in values if x is not None]
     return max(values) if values else None
+
+
+def parse_budget_left_percent(text):
+    patterns = (
+        r"(?:budget\s*)?(?:left|remaining)\s*[:\-]?\s*(\d{1,3}(?:\.\d+)?)\s*%",
+        r"(\d{1,3}(?:\.\d+)?)\s*%\s*(?:budget\s*)?(?:left|remaining)",
+    )
+    values = []
+    for pattern in patterns:
+        values.extend(float(value) for value in re.findall(pattern, text, re.I))
+    values = [value for value in values if 0 <= value <= 100]
+    return max(values) if values else None
+
+
+def is_campaign_url(url):
+    """Reject account, marketing, and contact pages as non-campaign opportunities."""
+    path = urllib.parse.urlparse(url).path.lower().rstrip("/")
+    blocked = (
+        "/signup", "/sign-up", "/login", "/register", "/contact",
+        "/affiliates", "/affiliate", "/about", "/pricing", "/privacy",
+        "/terms", "/blog", "/discover", "/campaigns",
+        "/streamer-clipping-campaigns",
+    )
+    return any(path == token or path.startswith(token + "/") for token in blocked)
 
 
 def parse_platforms(text):
@@ -224,7 +247,8 @@ def clean_name(text):
 
 
 def make_campaign(name, url, source, text, rate, budget_left=None):
-    stable_key = f"{source}|{name.strip().lower()}|{url}"
+    canonical_url = urllib.parse.urlunsplit(urllib.parse.urlsplit(url)._replace(query="", fragment="")).rstrip("/")
+    stable_key = f"{source}|{canonical_url.lower()}"
     campaign_id = f"{source.lower().replace(' ', '-')}-{__import__('hashlib').sha256(stable_key.encode('utf-8')).hexdigest()[:12]}"
     return {
         "id": campaign_id,
@@ -235,6 +259,7 @@ def make_campaign(name, url, source, text, rate, budget_left=None):
         "rate": rate,
         "budget": None,
         "budget_left": budget_left,
+        "budget_left_percent": parse_budget_left_percent(text),
         "platforms": parse_platforms(text),
         "description": text[:1200],
         "raw_text": text[:2400],
@@ -244,6 +269,10 @@ def make_campaign(name, url, source, text, rate, budget_left=None):
 
 
 def score_campaign(campaign, rules):
+    if not campaign.get("url") or is_campaign_url(campaign["url"]):
+        return 0, ["not an actionable campaign URL"]
+    if not isinstance(campaign.get("rate"), (int, float)) or campaign["rate"] <= 0:
+        return 0, ["missing or invalid payout rate"]
     score = 0
     reasons = []
     rate = campaign.get("rate")
@@ -259,8 +288,13 @@ def score_campaign(campaign, rules):
     matches = [term for term in preferred if term.lower() in text]
     if matches:
         score += min(25, len(matches) * 5); reasons.append("matches clipping/podcast focus")
-    if campaign.get("budget_left") and campaign["budget_left"] > 0:
+    if campaign.get("budget_left") is not None and campaign["budget_left"] > 0:
         score += 10; reasons.append("budget remains")
+    if campaign.get("budget_left_percent") is not None:
+        if campaign["budget_left_percent"] > 0:
+            score += 10; reasons.append(f"{campaign['budget_left_percent']:g}% budget left")
+        else:
+            score -= 10; reasons.append("budget exhausted")
     if any(term in text for term in ("podcast", "interview", "show", "creator", "talk", "clipping")):
         score += 15; reasons.append("good fit for spoken-content clipping")
     return min(100, int(score)), reasons
@@ -284,7 +318,7 @@ def parse_anchors(page, base_url, source, rules):
         # Only individual detail links are actionable; avoid listing/navigation links.
         if full_url.rstrip("/") == base_url.rstrip("/"):
             continue
-        if any(token in full_url.lower() for token in ("/discover", "/campaigns/", "/streamer-clipping-campaigns")):
+        if is_campaign_url(full_url):
             continue
         name = clean_name(text)
         if len(name) < 3:
@@ -343,7 +377,7 @@ def parse_json_scripts(page, base_url, source, rules):
                     url = urllib.parse.urljoin(base_url, url)
                     if url.rstrip("/") == base_url.rstrip("/"):
                         continue
-                    if any(token in url.lower() for token in ("/discover", "/campaigns/", "/streamer-clipping-campaigns")):
+                    if is_campaign_url(url):
                         continue
                     campaigns.append(normalize(make_campaign(name, url, source, blob, rate, parse_budget(blob)), rules))
                 stack.extend(item.values())
@@ -380,7 +414,7 @@ def parse_source(page, url, source, rules):
     items.extend(parse_json_scripts(page, url, source, rules))
     deduped = {}
     for item in items:
-        key = (item["name"].lower(), item.get("rate"), item.get("source_platform"))
+        key = (item.get("id"), urllib.parse.urlsplit(item.get("url", "")).path.rstrip("/").lower())
         deduped[key] = item
     return list(deduped.values())
 
