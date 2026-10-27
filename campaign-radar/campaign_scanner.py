@@ -119,7 +119,7 @@ def parse_campaign_cards(page, base_url, source, rules):
         # If the ancestor is mostly UI labels, fall back to the campaign title
         # portion before the payout and platform metadata.
         name = re.split(
-            r"\\$[\\d.,]+(?:[kKmM])?(?:\\s*[–-]\\s*\\$[\\d.,]+(?:[kKmM])?)?\\s*/\\s*(?:1K|1,000|1000|1M)",
+            r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)",
             name, maxsplit=1, flags=re.I
         )[0].strip(" -|:")
         name = re.sub(r"^(?:brand|streamer|creator)\\s+", "", name, flags=re.I).strip()
@@ -239,8 +239,8 @@ def is_campaign_url(url):
 
 
 ARTIFACT_NAME_RE = re.compile(
-    r"@keyframes|@media|@supports|@context|schema\\.org|FAQPage|data-hero-frame|"
-    r"<!doctype|<html|<script|application/ld\\+json|^\\s*[{\\[]",
+    r"@keyframes|@media|@supports|@context|schema\.org|FAQPage|data-hero-frame|"
+    r"<!doctype|<html|<script|application/ld\+json|^\s*[{[]",
     re.I,
 )
 
@@ -265,7 +265,7 @@ def validate_campaign(campaign):
     if ARTIFACT_NAME_RE.search(raw):
         return "rejected", "raw text contains page-code artifacts"
     rates = re.findall(
-        r"\\$[\\d.,]+(?:[kKmM])?(?:\\s*[–-]\\s*\\$[\\d.,]+(?:[kKmM])?)?\\s*/\\s*(?:1K|1,000|1000|1M)",
+        r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)",
         raw, re.I
     )
     if len(rates) != 1:
