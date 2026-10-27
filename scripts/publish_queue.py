@@ -109,7 +109,7 @@ def youtube_upload(item):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("queue")
-    parser.add_argument("--platform", choices=["youtube_shorts", "tiktok", "instagram_reels"], required=True)
+    parser.add_argument("--platform", choices=["youtube_shorts", "tiktok", "instagram_reels", "facebook_reels"], required=True)
     parser.add_argument("--execute", action="store_true", help="Actually publish supported platforms; default is dry-run")
     args = parser.parse_args()
 
