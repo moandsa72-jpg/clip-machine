@@ -16,7 +16,7 @@ on:
         required: false
         type: string
       posting_platform:
-        description: "Posting stage: dry-run by default; TikTok and Instagram remain manual handoffs"
+        description: "Posting stage: dry-run by default; unsupported direct publishing uses manual handoffs"
         required: true
         type: choice
         options:
@@ -24,6 +24,7 @@ on:
           - youtube_shorts
           - tiktok
           - instagram_reels
+          - facebook_reels
         default: none
       publish_now:
         description: "Explicitly authorize publishing eligible YouTube queue items (YouTube defaults to private)"
