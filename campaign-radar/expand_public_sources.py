@@ -4,9 +4,12 @@
 Read-only: fetches public pages only, no login, API key, paid service, or account access.
 """
 
+import hashlib
 import html
 import json
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -22,20 +25,24 @@ class LinkParser(HTMLParser):
     def __init__(self):
         super().__init__()
         self.links = []
+        self.text_parts = []
         self._href = None
         self._parts = []
 
     def handle_starttag(self, tag, attrs):
-        if tag != "a":
-            return
-        href = dict(attrs).get("href", "")
-        if href:
-            self._href = href
-            self._parts = []
+        attrs = dict(attrs)
+        if tag == "a":
+            href = attrs.get("href", "")
+            if href:
+                self._href = href
+                self._parts = []
+        elif tag not in {"script", "style", "noscript"}:
+            self.text_parts.append(" ")
 
     def handle_data(self, data):
         if self._href is not None:
             self._parts.append(data)
+        self.text_parts.append(data)
 
     def handle_endtag(self, tag):
         if tag == "a" and self._href is not None:
@@ -46,20 +53,36 @@ class LinkParser(HTMLParser):
             self._parts = []
 
 
-def fetch_page(url):
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "clip-machine-free-campaign-radar/1.0",
-            "Accept": "text/html,application/xhtml+xml",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return response.read().decode("utf-8", errors="replace")
+def fetch_page(url, attempts=3):
+    last_error = None
+    for attempt in range(attempts):
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; clip-machine-free-campaign-radar/2.0)",
+                "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.8",
+                "Cache-Control": "no-cache",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code != 429 or attempt == attempts - 1:
+                raise
+            retry_after = exc.headers.get("Retry-After")
+            try:
+                delay = min(12, max(2, int(retry_after))) if retry_after else 2 ** attempt
+            except ValueError:
+                delay = 2 ** attempt
+            time.sleep(delay)
+    raise last_error
 
 
 def money(value):
-    value = value.strip().replace(",", "")
+    value = str(value).strip().replace(",", "")
     multiplier = 1
     if value.lower().endswith("k"):
         multiplier = 1000
@@ -69,43 +92,36 @@ def money(value):
         value = value[:-1]
     try:
         return float(value) * multiplier
-    except ValueError:
+    except (TypeError, ValueError):
         return None
 
 
 def parse_rate(text):
     patterns = [
-        r"\$([\d.,]+(?:[kKmM])?)\s*/\s*(?:1K|1,000)",
+        r"\$([\d.,]+(?:[kKmM])?)\s*/\s*(?:1K|1,000|per\s+1K|per\s+1,000)",
         r"\$([\d.,]+(?:[kKmM])?)\s*/\s*(?:per\s+)?1M",
         r"\$([\d.,]+(?:[kKmM])?)\s*/\s*(?:per\s+)?1000",
     ]
     values = []
     for pattern in patterns:
-        values.extend(money(value) for value in re.findall(pattern, text, re.I))
-    values = [value for value in values if value is not None]
-    if not values:
-        return None
-    value = max(values)
-    # Clipster advertises per 1M; convert it to the same $/1K unit used elsewhere.
-    if re.search(r"/\s*(?:per\s+)?1M", text, re.I):
-        value /= 1000
-    return value
+        for value in re.findall(pattern, text, re.I):
+            parsed = money(value)
+            if parsed is not None:
+                if re.search(r"/\s*(?:per\s+)?1M", text, re.I):
+                    parsed /= 1000
+                values.append(parsed)
+    return max(values) if values else None
 
 
 def parse_budget(text):
     match = re.search(
-        r"(?:budget\s*(?:left)?|left)\s*\$([\d.,]+(?:[kKmM])?)",
+        r"(?:budget\s*(?:left|remaining)?|left)\s*[:\-]?\s*\$([\d.,]+(?:[kKmM])?)",
         text,
         re.I,
     )
     if match:
         return money(match.group(1))
-    match = re.search(
-        r"\$([\d.,]+(?:[kKmM])?)\s*/\s*\$([\d.,]+(?:[kKmM])?)",
-        text,
-        re.I,
-    )
-    return money(match.group(1)) if match else None
+    return None
 
 
 def parse_platforms(text):
@@ -118,8 +134,10 @@ def parse_platforms(text):
 
 
 def make_campaign(name, url, source, text, rate, budget_left=None):
+    stable_key = f"{source}|{name.strip().lower()}|{url}"
+    campaign_id = f"{source.lower().replace(' ', '-')}-{hashlib.sha256(stable_key.encode('utf-8')).hexdigest()[:12]}"
     return {
-        "id": f"{source.lower().replace(' ', '-')}-{abs(hash((name, url))) % 10**12}",
+        "id": campaign_id,
         "name": name.strip()[:240],
         "url": url,
         "source_platform": source,
@@ -134,9 +152,9 @@ def make_campaign(name, url, source, text, rate, budget_left=None):
 
 
 def campaign_name(text):
-    text = re.sub(r"\$[\d.,]+(?:[kKmM])?\s*/\s*(?:1K|1,000|per\s+1M|1M).*$", "", text, flags=re.I)
-    text = re.sub(r"\b(?:paid out|rate|platforms|campaign details|image)\b", " ", text, flags=re.I)
-    return " ".join(text.split()).strip()
+    text = re.sub(r"\$[\d.,]+(?:[kKmM])?\s*/\s*(?:1K|1,000|per\s+1K|per\s+1,000|per\s+1M|1M|1000).*$", "", text, flags=re.I)
+    text = re.sub(r"\b(?:paid out|rate|platforms|campaign details|image|views?)\b", " ", text, flags=re.I)
+    return " ".join(text.split()).strip(" -|:")
 
 
 def parse_anchor_campaigns(page, base_url, source, require_clipping=False):
@@ -171,6 +189,115 @@ def parse_anchor_campaigns(page, base_url, source, require_clipping=False):
     return campaigns
 
 
+def iter_json_values(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from iter_json_values(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from iter_json_values(child)
+
+
+def extract_json_scripts(page):
+    scripts = re.findall(r"<script[^>]*>(.*?)</script>", page, flags=re.I | re.S)
+    values = []
+    for raw in scripts:
+        text = html.unescape(raw).strip()
+        if not text or len(text) > 5_000_000:
+            continue
+        candidates = [text]
+        if text.startswith("<![CDATA[") and text.endswith("]]>"):
+            candidates.append(text[9:-3])
+        for candidate in candidates:
+            try:
+                values.append(json.loads(candidate))
+            except (json.JSONDecodeError, TypeError):
+                continue
+    return values
+
+
+def first_string(item, keys):
+    for key in keys:
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def first_number(item, keys):
+    for key in keys:
+        value = item.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+        if isinstance(value, str):
+            parsed = parse_rate(value)
+            if parsed is not None:
+                return parsed
+            parsed = money(value)
+            if parsed is not None and parsed > 0:
+                return parsed
+    return None
+
+
+def parse_embedded_campaigns(page, base_url, source):
+    campaigns = []
+    seen = set()
+    for root in extract_json_scripts(page):
+        for item in iter_json_values(root):
+            name = first_string(item, ("name", "title", "campaignName", "campaign_name", "displayName"))
+            if not name or len(name) < 3:
+                continue
+            raw_blob = json.dumps(item, ensure_ascii=False)
+            rate = parse_rate(raw_blob)
+            if rate is None:
+                rate = first_number(item, ("rate", "rpm", "cpm", "payout", "payPerThousand", "ratePer1k"))
+            if rate is None:
+                continue
+            url = first_string(item, ("url", "link", "href", "campaignUrl", "campaign_url"))
+            if not url:
+                url = base_url
+            url = urllib.parse.urljoin(base_url, url)
+            text = f"{name} {raw_blob}"
+            key = (source, name.lower(), rate, url)
+            if key in seen:
+                continue
+            seen.add(key)
+            campaigns.append(make_campaign(name, url, source, text, rate, parse_budget(raw_blob)))
+    return campaigns
+
+
+def parse_visible_campaigns(page, base_url, source):
+    parser = LinkParser()
+    parser.feed(page)
+    text = html.unescape(" ".join(parser.text_parts))
+    text = re.sub(r"\s+", " ", text)
+    campaigns = []
+    seen = set()
+    pattern = re.compile(
+        r"(?P<name>[A-Za-z0-9][^$|]{2,180}?)\s+\$(?P<rate>[\d.,]+(?:[kKmM])?)\s*/\s*(?P<unit>1K|1,000|1M|1000)\s+views?(?P<tail>.{0,220})",
+        re.I,
+    )
+    for match in pattern.finditer(text):
+        rate = money(match.group("rate"))
+        if rate is None:
+            continue
+        if match.group("unit").lower() == "1m":
+            rate /= 1000
+        name = campaign_name(match.group("name"))
+        if not name or len(name) < 3:
+            continue
+        blob = match.group(0)
+        if source != "ClipRadar" and "clip" not in blob.lower() and "campaign" not in blob.lower():
+            continue
+        key = (source, name.lower(), rate)
+        if key in seen:
+            continue
+        seen.add(key)
+        campaigns.append(make_campaign(name, base_url, source, blob, rate, parse_budget(blob)))
+    return campaigns
+
+
 def score(item, rules):
     value = 0
     name = item["name"].lower()
@@ -197,18 +324,24 @@ def main():
     report = json.loads(LATEST_PATH.read_text(encoding="utf-8")) if LATEST_PATH.exists() else {}
     existing = report.get("campaigns", []) + report.get("kick_campaigns", [])
     sources = [
-        ("Clipster", "https://www.clipster.gg/discover"),
+        ("Clipster", "https://www.clipster.com/discover"),
         ("CLIPPING.net", "https://clipping.net/"),
         ("ClipRadar", "https://www.clipradar.co/"),
     ]
-    errors = list(report.get("errors", []))
+    errors = [error for error in report.get("errors", []) if not error.startswith(("Clipster:", "CLIPPING.net:", "ClipRadar:"))]
     added = []
     for source, url in sources:
         try:
             page = fetch_page(url)
-            items = parse_anchor_campaigns(page, url, source, require_clipping=(source != "ClipRadar"))
-            added.extend(items)
-            print(f"{source}: found {len(items)} public campaigns")
+            items = []
+            items.extend(parse_anchor_campaigns(page, url, source, require_clipping=(source != "ClipRadar")))
+            items.extend(parse_embedded_campaigns(page, url, source))
+            items.extend(parse_visible_campaigns(page, url, source))
+            deduped = {}
+            for item in items:
+                deduped[(item["name"].lower(), item["rate"], item["url"])] = item
+            added.extend(deduped.values())
+            print(f"{source}: found {len(deduped)} public campaigns")
         except Exception as exc:
             errors.append(f"{source}: {exc}")
             print(f"{source}: scan failed: {exc}")
@@ -238,6 +371,7 @@ def main():
             "direct_public_sources": ["Content Rewards", "Clipster", "CLIPPING.net"],
             "public_aggregator_sources": ["ClipPay", "ClipRadar"],
             "scan_mode": "free_public_html",
+            "parsing": ["anchors", "embedded_json", "visible_text"],
         },
     })
     LATEST_PATH.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
