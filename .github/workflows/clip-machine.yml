@@ -15,6 +15,21 @@ on:
         description: "Direct HTTPS video URL or public Google Drive folder (leave empty to use input/)"
         required: false
         type: string
+      posting_platform:
+        description: "Posting stage: dry-run by default; TikTok and Instagram remain manual handoffs"
+        required: true
+        type: choice
+        options:
+          - none
+          - youtube_shorts
+          - tiktok
+          - instagram_reels
+        default: none
+      publish_now:
+        description: "Explicitly authorize publishing eligible YouTube queue items (YouTube defaults to private)"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -388,6 +403,21 @@ jobs:
             output/campaign_opportunities/opportunities.json \
             "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
             output/posting_queue/posting_queue.json
+
+      - name: Run posting stage
+        if: inputs.posting_platform != 'none'
+        env:
+          POSTING_PLATFORM: ${{ inputs.posting_platform }}
+          PUBLISH_NOW: ${{ inputs.publish_now }}
+          YOUTUBE_ACCESS_TOKEN: ${{ secrets.YOUTUBE_ACCESS_TOKEN }}
+          YOUTUBE_PRIVACY: private
+        run: |
+          set -euo pipefail
+          if [ "$PUBLISH_NOW" = "true" ] && [ "$POSTING_PLATFORM" = "youtube_shorts" ]; then
+            python scripts/publish_queue.py output/posting_queue/posting_queue.json --platform "$POSTING_PLATFORM" --execute
+          else
+            python scripts/publish_queue.py output/posting_queue/posting_queue.json --platform "$POSTING_PLATFORM"
+          fi
 
       - name: Upload selected campaign posting package
         uses: actions/upload-artifact@v4
