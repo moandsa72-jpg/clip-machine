@@ -269,9 +269,29 @@ def parse_json_scripts(page, base_url, source, rules):
     return campaigns
 
 
+def inspect_page(page):
+    """Return parser diagnostics without storing page content in the report."""
+    parser = LinkParser()
+    parser.feed(page)
+    scripts = re.findall(r"<script\\b[^>]*>(.*?)</script\\s*>", page, flags=re.I | re.S)
+    return {
+        "html_bytes": len(page.encode("utf-8", errors="replace")),
+        "anchors_with_text": len(parser.links),
+        "script_blocks": len(scripts),
+        "payout_markers_in_html": len(re.findall(
+            r"\\$[\\d.,]+(?:[kKmM])?(?:\\s*[–-]\\s*\\$[\\d.,]+(?:[kKmM])?)?\\s*/\\s*(?:1K|1,000|1000|1M)",
+            html.unescape(page), flags=re.I
+        )),
+        "json_script_blocks": sum(
+            1 for raw in scripts
+            if raw.strip().startswith(("{", "["))
+        ),
+    }
+
+
 def parse_source(page, url, source, rules):
-    # Visible-text windows can merge neighboring cards and attach the wrong payout.
-    # Use individual detail anchors and structured JSON only.
+    # Avoid broad text windows: they can merge neighboring cards and misassign rates.
+    # Diagnostics show whether a page has payout markers the current safe parsers miss.
     items = parse_anchors(page, url, source, rules)
     items.extend(parse_json_scripts(page, url, source, rules))
     deduped = {}
@@ -294,19 +314,35 @@ def main():
         ("CLIPPING.net", "https://clipping.net/"),
         ("ClipRadar", "https://www.clipradar.co/"),
     ]
-    ranked = []; seen = set(); errors = []
+    ranked = []; seen = set(); errors = []; source_diagnostics = []
     for source_name, url in sources:
+        status = {"name": source_name, "url": url, "status": "unknown"}
         try:
             page = fetch_page(url)
+            status.update(inspect_page(page))
             items = parse_source(page, url, source_name, rules)
-            print(f"{source_name}: parsed {len(items)} public campaign candidates")
+            status.update({
+                "status": "ok" if items else (
+                    "payout_markers_unparsed" if status["payout_markers_in_html"] else
+                    "no_payout_markers_found"
+                ),
+                "candidates_parsed": len(items),
+            })
+            print(
+                f"{source_name}: parsed {len(items)} candidates; "
+                f"anchors={status['anchors_with_text']}, "
+                f"payout_markers={status['payout_markers_in_html']}, "
+                f"JSON scripts={status['json_script_blocks']}; status={status['status']}"
+            )
             for item in items:
                 key = (item["name"].lower(), item.get("rate"), item.get("source_platform"))
                 if key in seen: continue
                 seen.add(key); ranked.append(item)
         except Exception as exc:
+            status.update({"status": "request_failed", "error": str(exc)})
             errors.append(f"{source_name}: {exc}")
             print(f"{source_name}: scan failed: {exc}")
+        source_diagnostics.append(status)
     ranked.sort(key=lambda x: x["opportunity_score"], reverse=True)
     selected = [x for x in ranked if x["opportunity_score"] >= rules["minimum_score_to_report"]]
     kick = [x for x in ranked if "kick" in x.get("name", "").lower() or "kick" in x.get("description", "").lower()]
@@ -318,11 +354,16 @@ def main():
         "kick_campaigns": kick,
         "campaigns": selected,
         "errors": errors,
+        "source_diagnostics": source_diagnostics,
         "coverage": {
             "direct_public_sources": ["Content Rewards", "Clipster", "CLIPPING.net"],
             "public_aggregator_sources": ["ClipPay", "ClipRadar"],
             "scan_mode": "free_public_html",
-            "parsing": ["anchors", "visible_text_windows", "embedded_json"],
+            "parsing": ["individual_anchors", "embedded_json"],
+            "diagnostic_statuses": [
+                "ok", "payout_markers_unparsed",
+                "no_payout_markers_found", "request_failed"
+            ],
         },
     }
     output = Path(args.output) if args.output else ROOT / "campaign-radar" / "latest.json"
