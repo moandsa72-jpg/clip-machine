@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read-only, zero-cost campaign radar using public campaign listings."""
 
+import argparse
 import html
 import json
 import re
@@ -49,8 +50,11 @@ class LinkParser(HTMLParser):
             self._parts = []
 
 
-def load_config():
-    return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+def load_config(path=None):
+    config_path = Path(path) if path else CONFIG_PATH
+    if not config_path.is_absolute():
+        config_path = ROOT / config_path
+    return json.loads(config_path.read_text(encoding="utf-8"))
 
 
 def fetch_page(url, attempts=3):
@@ -278,7 +282,11 @@ def parse_source(page, url, source, rules):
 
 
 def main():
-    config = load_config(); rules = config["scoring"]
+    parser = argparse.ArgumentParser(description="Scan public campaign listings for clipping opportunities.")
+    parser.add_argument("--config", help="Optional JSON config path; defaults to campaign-radar/config.json.")
+    parser.add_argument("--output", help="Optional report path; defaults to campaign-radar/latest.json.")
+    args = parser.parse_args()
+    config = load_config(args.config); rules = config["scoring"]
     sources = [
         ("Content Rewards", config["source"]["discover_url"]),
         ("ClipPay", config["clip_pay_index_url"]),
@@ -317,8 +325,12 @@ def main():
             "parsing": ["anchors", "visible_text_windows", "embedded_json"],
         },
     }
-    output = ROOT / "campaign-radar" / "latest.json"
+    output = Path(args.output) if args.output else ROOT / "campaign-radar" / "latest.json"
+    if not output.is_absolute():
+        output = ROOT / output
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"Report saved to: {output}")
     print(f"Campaign radar scanned {len(ranked)} public campaigns across {len(sources)} sources.")
     print(f"{len(selected)} campaigns passed the current score threshold.")
     return 0
