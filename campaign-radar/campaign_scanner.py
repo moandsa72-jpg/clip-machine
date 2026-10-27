@@ -273,13 +273,13 @@ def inspect_page(page):
     """Return parser diagnostics without storing page content in the report."""
     parser = LinkParser()
     parser.feed(page)
-    scripts = re.findall(r"<script\\b[^>]*>(.*?)</script\\s*>", page, flags=re.I | re.S)
+    scripts = re.findall(r"<script\b[^>]*>(.*?)</script\s*>", page, flags=re.I | re.S)
     return {
         "html_bytes": len(page.encode("utf-8", errors="replace")),
         "anchors_with_text": len(parser.links),
         "script_blocks": len(scripts),
         "payout_markers_in_html": len(re.findall(
-            r"\\$[\\d.,]+(?:[kKmM])?(?:\\s*[–-]\\s*\\$[\\d.,]+(?:[kKmM])?)?\\s*/\\s*(?:1K|1,000|1000|1M)",
+            r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)",
             html.unescape(page), flags=re.I
         )),
         "json_script_blocks": sum(
