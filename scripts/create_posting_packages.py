@@ -306,6 +306,8 @@ def build_clip_package(clip, rules, campaign, index):
         "duration_seconds": round(duration, 3) if duration is not None else None,
         "title": title,
         "caption": caption,
+        "transcript_excerpt": compact_text(metadata.get("text", ""), 600),
+        "content_type": metadata.get("content_type", ""),
         "hashtags": list(rules.get("required_hashtags") or []),
         "mentions": list(rules.get("required_mentions") or []),
         "seo_keywords": seo_keywords,
