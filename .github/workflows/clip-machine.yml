@@ -11,7 +11,6 @@ on:
         options:
           - blastoff_jingle_jared_rebel_audio
           - blastoff_warren_zeiders_md_motivator
-
       video_url:
         description: "Direct HTTPS video URL or public Google Drive folder (leave empty to use input/)"
         required: false
@@ -79,14 +78,23 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$VIDEO_URL" ]; then
+            SOURCE_KEY="$(printf '%s' "$VIDEO_URL" | sha256sum | cut -d' ' -f1)"
             if [[ "$VIDEO_URL" == *"drive.google.com/drive/folders/"* ]]; then
               echo "source_type=drive_folder" >> "$GITHUB_OUTPUT"
             else
               echo "source_type=url" >> "$GITHUB_OUTPUT"
             fi
           else
+            SOURCE_KEY="local"
             echo "source_type=local" >> "$GITHUB_OUTPUT"
           fi
+          echo "source_key=$SOURCE_KEY" >> "$GITHUB_OUTPUT"
+
+      - name: Restore processing state
+        uses: actions/cache@v4
+        with:
+          path: work/state
+          key: clip-machine-state-${{ github.ref_name }}-${{ inputs.campaign_id }}-${{ steps.source.outputs.source_key }}-${{ hashFiles('input/**') }}
 
       - name: Download video from URL
         if: steps.source.outputs.source_type == 'url'
@@ -201,7 +209,6 @@ jobs:
           print(len(items))
           PY
           )"
-
                 if [ "$COUNT" -eq 0 ]; then
                   DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO" || true)"
                   python - "$RAW_MOMENTS" "$DURATION" <<'PY'
@@ -304,7 +311,6 @@ jobs:
                 fi
               fi
             fi
-
             echo "Finished video $INDEX"
           done < work/video_list
 
