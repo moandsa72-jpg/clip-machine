@@ -189,6 +189,7 @@ def parse_budgets(text):
         r"(?:total\s+)?budget\s*(?:of|is|:|-)\s*\$([\d.,]+(?:[kKmM])?)",
         r"\$([\d.,]+(?:[kKmM])?)\s+(?:total\s+)?budget\b",
         r"\$([\d.,]+(?:[kKmM])?)\s+pool\b",
+        r"\$[\d.,]+(?:[kKmM])?\s*/\s*\$([\d.,]+(?:[kKmM])?)\s+budget\b",
     )
     left_patterns = (
         r"(?:budget\s*)?(?:left|remaining)\s*[:\-]?\s*\$([\d.,]+(?:[kKmM])?)",
