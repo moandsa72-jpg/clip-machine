@@ -314,10 +314,10 @@ def score_campaign(campaign, rules):
         else:
             score += 5; reasons.append(f"low rate ${rate:g}/1K")
     text = " ".join([campaign.get("name", ""), campaign.get("description", "")]).lower()
-    preferred = rules["preferred_categories"] + rules["preferred_tags"]
+    preferred = rules.get("preferred_categories", []) + rules.get("preferred_tags", [])
     matches = [term for term in preferred if term.lower() in text]
     if matches:
-        score += min(25, len(matches) * 5); reasons.append("matches clipping/podcast focus")
+        score += min(20, len(matches) * 4); reasons.append("matches broad creator/campaign interests")
     if campaign.get("budget_left") is not None and campaign["budget_left"] > 0:
         score += 10; reasons.append("budget remains")
     if campaign.get("budget_left_percent") is not None:
@@ -325,8 +325,21 @@ def score_campaign(campaign, rules):
             score += 10; reasons.append(f"{campaign['budget_left_percent']:g}% budget left")
         else:
             score -= 10; reasons.append("budget exhausted")
-    if any(term in text for term in ("podcast", "interview", "show", "creator", "talk", "clipping")):
-        score += 15; reasons.append("good fit for spoken-content clipping")
+    # Do not bias discovery toward podcasts: campaigns may involve gaming, music, sports,
+    # products, UGC, streamers, entertainment, or other short-form content.
+    if any(term in text for term in ("clip", "clipping", "short-form", "short form", "ugc", "repost", "creator", "views")):
+        score += 10; reasons.append("relevant to short-form creator work")
+    # Flag obvious account restrictions and source-video availability for human review.
+    account_restriction = re.search(r"(?:minimum|min\.?|at least)\s*[\d,]+\s*(?:followers|subs|subscribers)|\d[\d,]*\+?\s*(?:followers|subs|subscribers)|account\s+(?:must be|older than|at least)\s*\d+\s*days", text, re.I)
+    campaign["new_account_compatible"] = False if account_restriction else None
+    if account_restriction:
+        campaign["eligibility_notes"] = ["possible follower-count or account-age restriction; inspect campaign terms"]
+    else:
+        campaign["eligibility_notes"] = ["no explicit follower/account-age restriction found in listing; verify full terms"]
+    source_video_terms = ("provided videos", "source videos", "campaign assets", "download the videos", "use our videos", "use videos from", "clip any", "clip our", "provided content", "source content", "video library")
+    campaign["source_video_status"] = "likely_available" if any(term in text for term in source_video_terms) else "unknown"
+    if campaign["source_video_status"] == "unknown":
+        campaign["eligibility_notes"].append("listing does not confirm provided videos or permission to use platform videos")
     return min(100, int(score)), reasons
 
 
@@ -450,6 +463,7 @@ def main():
         ("Clipster", "https://www.clipster.com/discover"),
         ("CLIPPING.net", "https://clipping.net/"),
         ("ClipRadar", "https://www.clipradar.co/"),
+        ("BlastOff", "https://www.blastoffmedia.co/"),
     ]
     ranked = []; seen = set(); errors = []; source_diagnostics = []
     for source_name, url in sources:
@@ -475,7 +489,8 @@ def main():
     for item in rejected:
         reason = item.get("rejection_reason") or item.get("validation_status") or "unknown"
         rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
-    selected = [x for x in ranked if x.get("validation_status") == "valid" and x["opportunity_score"] >= rules["minimum_score_to_report"]]
+    minimum_rate = float(rules.get("minimum_rate_usd_per_1k", 1.0))
+    selected = [x for x in ranked if x.get("validation_status") == "valid" and isinstance(x.get("rate"), (int, float)) and x["rate"] >= minimum_rate and x["opportunity_score"] >= rules.get("minimum_score_to_report", 0)]
     kick = [x for x in selected if "kick" in x.get("name", "").lower() or "kick" in x.get("description", "").lower()]
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -490,8 +505,11 @@ def main():
         "errors": errors,
         "source_diagnostics": source_diagnostics,
         "coverage": {
-            "direct_public_sources": ["Content Rewards", "Clipster", "CLIPPING.net"],
+            "direct_public_sources": ["Content Rewards", "Clipster", "CLIPPING.net", "BlastOff"],
             "public_aggregator_sources": ["ClipPay", "ClipRadar"],
+            "minimum_rate_usd_per_1k": minimum_rate,
+            "campaign_type_filter": "none; not limited to podcasts",
+            "eligibility_checks": ["minimum rate", "possible follower/account-age restrictions", "source video availability or permission"],
             "scan_mode": "free_public_html",
             "parsing": ["individual_anchors", "embedded_json"],
             "diagnostic_statuses": ["ok", "payout_markers_unparsed", "no_payout_markers_found", "request_failed"],
