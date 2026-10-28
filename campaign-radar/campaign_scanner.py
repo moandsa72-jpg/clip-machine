@@ -50,7 +50,6 @@ class LinkParser(HTMLParser):
             self._parts = []
 
 
-
 class CampaignCardParser(HTMLParser):
     """Associate text and links within one DOM ancestor, never across sibling cards."""
     VOID_TAGS = {
@@ -87,14 +86,10 @@ class CampaignCardParser(HTMLParser):
             href = closed[-1]["attrs"].get("href", "")
             anchor_text = " ".join(" ".join(closed[-1]["parts"]).split())
             if href:
-                # Walk from the nearest parent outward. First ancestor containing
-                # a rate and a meaningful title is the smallest safe card context.
                 for parent in reversed(self.stack[:idx]):
                     blob = " ".join(" ".join(parent["parts"]).split())
                     attrs = parent["attrs"]
                     marker = " ".join([str(attrs.get("class", "")), str(attrs.get("id", ""))]).lower()
-                    # Only use a bounded, card-like ancestor. Generic page wrappers
-                    # accumulate neighboring campaigns and must never supply a rate.
                     if not re.search(r"(?:campaign|offer|listing|result|opportunit|card|tile|item)", marker):
                         continue
                     rate_markers = re.findall(
@@ -105,10 +100,7 @@ class CampaignCardParser(HTMLParser):
                         continue
                     title = clean_name(anchor_text)
                     if len(title) >= 3 and not ARTIFACT_NAME_RE.search(title):
-                        self.cards.append({
-                            "href": href, "anchor_text": anchor_text, "text": blob,
-                            "name": title,
-                        })
+                        self.cards.append({"href": href, "anchor_text": anchor_text, "text": blob, "name": title})
                         break
         del self.stack[idx:]
 
@@ -119,26 +111,19 @@ def parse_campaign_cards(page, base_url, source, rules):
     campaigns = []
     for card in parser.cards:
         full_url = urllib.parse.urljoin(base_url, card["href"])
-        if full_url.rstrip("/") == base_url.rstrip("/"):
-            continue
-        if is_campaign_url(full_url):
+        if full_url.rstrip("/") == base_url.rstrip("/") or is_campaign_url(full_url):
             continue
         rate = parse_rate(card["text"])
         if rate is None:
             continue
-        name = card["name"]
-        # If the ancestor is mostly UI labels, fall back to the campaign title
-        # portion before the payout and platform metadata.
         name = re.split(
             r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)",
-            name, maxsplit=1, flags=re.I
+            card["name"], maxsplit=1, flags=re.I
         )[0].strip(" -|:")
         name = re.sub(r"^(?:brand|streamer|creator)\s+", "", name, flags=re.I).strip()
         if len(name) < 3:
             continue
-        campaigns.append(normalize(make_campaign(
-            name, full_url, source, card["text"], rate, None
-        , rules))
+        campaigns.append(normalize(make_campaign(name, full_url, source, card["text"], rate, None), rules))
     return campaigns
 
 
@@ -152,15 +137,12 @@ def load_config(path=None):
 def fetch_page(url, attempts=3):
     last_error = None
     for attempt in range(attempts):
-        request = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; clip-machine-free-campaign-radar/3.0)",
-                "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.8",
-                "Cache-Control": "no-cache",
-            },
-        )
+        request = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; clip-machine-free-campaign-radar/3.0)",
+            "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.8",
+            "Cache-Control": "no-cache",
+        })
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 return response.read().decode("utf-8", errors="replace")
@@ -181,11 +163,9 @@ def money(value):
     value = str(value).strip().replace(",", "")
     multiplier = 1
     if value.lower().endswith("k"):
-        multiplier = 1000
-        value = value[:-1]
+        multiplier, value = 1000, value[:-1]
     elif value.lower().endswith("m"):
-        multiplier = 1000000
-        value = value[:-1]
+        multiplier, value = 1000000, value[:-1]
     try:
         return float(value) * multiplier
     except (TypeError, ValueError):
@@ -193,24 +173,18 @@ def money(value):
 
 
 def parse_rate(text):
-    pattern = re.compile(
-        r"\$([\d.,]+(?:[kKmM])?)(?:\s*[–-]\s*\$([\d.,]+(?:[kKmM])?))?\s*/\s*(?:1K|1,000|1000|1M)",
-        re.I,
-    )
+    pattern = re.compile(r"\$([\d.,]+(?:[kKmM])?)(?:\s*[–-]\s*\$([\d.,]+(?:[kKmM])?))?\s*/\s*(?:1K|1,000|1000|1M)", re.I)
     values = []
     for low, high in pattern.findall(text):
         value = money(high or low)
         if value is not None:
-            # 1M payouts are normalized to the project's $/1K unit.
-            unit_match = re.search(r"/\s*(1M)\b", text, re.I)
-            if unit_match:
+            if re.search(r"/\s*(1M)\b", text, re.I):
                 value /= 1000
             values.append(value)
     return max(values) if values else None
 
 
 def parse_budgets(text):
-    """Return (total budget, remaining budget) only when wording is explicit."""
     total_patterns = (
         r"(?:total\s+)?budget\s*(?:of|is|:|-)\s*\$([\d.,]+(?:[kKmM])?)",
         r"\$([\d.,]+(?:[kKmM])?)\s+(?:total\s+)?budget\b",
@@ -240,7 +214,6 @@ def parse_budget_left_percent(text):
 
 
 def is_campaign_url(url):
-    """Reject account, marketing, and contact pages as non-campaign opportunities."""
     path = urllib.parse.urlparse(url).path.lower().rstrip("/")
     parsed = urllib.parse.urlparse(url)
     host = (parsed.hostname or "").lower()
@@ -257,18 +230,15 @@ def is_campaign_url(url):
 
 ARTIFACT_NAME_RE = re.compile(
     r"@keyframes|@media|@supports|@context|schema\.org|FAQPage|data-hero-frame|"
-    r"<!doctype|<html|<script|application/ld\+json|^\s*(?:\{|\[)",
-    re.I,
+    r"<!doctype|<html|<script|application/ld\+json|^\s*(?:\{|\[)", re.I,
 )
 
 
 def validate_campaign(campaign):
-    """Hard quality gate: reject page artifacts and rates not tied to one campaign."""
     name = str(campaign.get("name") or "").strip()
     url = str(campaign.get("url") or "")
     raw = str(campaign.get("raw_text") or "")
     host = (urllib.parse.urlparse(url).hostname or "").lower()
-
     if len(name) < 3 or ARTIFACT_NAME_RE.search(name):
         return "rejected", "name looks like CSS, JSON-LD, markup, or page boilerplate"
     if is_campaign_url(url):
@@ -279,15 +249,9 @@ def validate_campaign(campaign):
             return "rejected", "Content Rewards URL is not an individual campaign UUID"
     elif not re.search(r"/(?:campaign|campaigns|clip|clipping|offer|opportunit|[0-9a-f]{8}-[0-9a-f-]{20,})(?:/|$)", urllib.parse.urlparse(url).path, re.I):
         return "rejected", "URL does not resemble an individual campaign or offer"
-    # Raw campaign text can contain benign schema metadata. Reject only when
-    # the candidate itself looks like code/markup, not because one metadata key
-    # occurs somewhere inside otherwise useful campaign text.
     if re.search(r"@keyframes|@media|@supports|data-hero-frame|<!doctype|<html|<script", raw, re.I):
         return "rejected", "raw text contains CSS or HTML artifacts"
-    rates = re.findall(
-        r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)",
-        raw, re.I
-    )
+    rates = re.findall(r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)", raw, re.I)
     if len(rates) != 1:
         return "low_confidence", "raw text does not contain exactly one payout rate"
     rate = campaign.get("rate")
@@ -384,10 +348,7 @@ def parse_anchors(page, base_url, source, rules):
         if rate is None:
             continue
         full_url = urllib.parse.urljoin(base_url, url)
-        # Only individual detail links are actionable; avoid listing/navigation links.
-        if full_url.rstrip("/") == base_url.rstrip("/"):
-            continue
-        if is_campaign_url(full_url):
+        if full_url.rstrip("/") == base_url.rstrip("/") or is_campaign_url(full_url):
             continue
         name = clean_name(text)
         if len(name) < 3:
@@ -400,7 +361,6 @@ def parse_visible(page, base_url, source, rules):
     parser = LinkParser(); parser.feed(page)
     visible = re.sub(r"\s+", " ", html.unescape(" ".join(parser.text_parts)))
     campaigns = []
-    # Look around every payout marker rather than requiring a specific word such as 'clipping'.
     marker = re.compile(r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)", re.I)
     for match in marker.finditer(visible):
         start = max(0, match.start() - 180)
@@ -444,9 +404,7 @@ def parse_json_scripts(page, base_url, source, rules):
                 if name and rate is not None:
                     url = next((item.get(k) for k in ("url", "link", "href", "campaignUrl", "campaign_url") if isinstance(item.get(k), str) and item.get(k)), base_url)
                     url = urllib.parse.urljoin(base_url, url)
-                    if url.rstrip("/") == base_url.rstrip("/"):
-                        continue
-                    if is_campaign_url(url):
+                    if url.rstrip("/") == base_url.rstrip("/") or is_campaign_url(url):
                         continue
                     campaigns.append(normalize(make_campaign(name, url, source, blob, rate, None), rules))
                 stack.extend(item.values())
@@ -456,7 +414,6 @@ def parse_json_scripts(page, base_url, source, rules):
 
 
 def inspect_page(page):
-    """Return parser diagnostics without storing page content in the report."""
     parser = LinkParser()
     parser.feed(page)
     scripts = re.findall(r"<script\b[^>]*>(.*?)</script\s*>", page, flags=re.I | re.S)
@@ -464,20 +421,12 @@ def inspect_page(page):
         "html_bytes": len(page.encode("utf-8", errors="replace")),
         "anchors_with_text": len(parser.links),
         "script_blocks": len(scripts),
-        "payout_markers_in_html": len(re.findall(
-            r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)",
-            html.unescape(page), flags=re.I
-        )),
-        "json_script_blocks": sum(
-            1 for raw in scripts
-            if raw.strip().startswith(("{", "["))
-        ),
+        "payout_markers_in_html": len(re.findall(r"\$[\d.,]+(?:[kKmM])?(?:\s*[–-]\s*\$[\d.,]+(?:[kKmM])?)?\s*/\s*(?:1K|1,000|1000|1M)", html.unescape(page), flags=re.I)),
+        "json_script_blocks": sum(1 for raw in scripts if raw.strip().startswith(("{", "["))),
     }
 
 
 def parse_source(page, url, source, rules):
-    # Avoid broad text windows: they can merge neighboring cards and misassign rates.
-    # Diagnostics show whether a page has payout markers the current safe parsers miss.
     items = parse_anchors(page, url, source, rules)
     items.extend(parse_campaign_cards(page, url, source, rules))
     items.extend(parse_json_scripts(page, url, source, rules))
@@ -508,19 +457,8 @@ def main():
             page = fetch_page(url)
             status.update(inspect_page(page))
             items = parse_source(page, url, source_name, rules)
-            status.update({
-                "status": "ok" if items else (
-                    "payout_markers_unparsed" if status["payout_markers_in_html"] else
-                    "no_payout_markers_found"
-                ),
-                "candidates_parsed": len(items),
-            })
-            print(
-                f"{source_name}: parsed {len(items)} candidates; "
-                f"anchors={status['anchors_with_text']}, "
-                f"payout_markers={status['payout_markers_in_html']}, "
-                f"JSON scripts={status['json_script_blocks']}; status={status['status']}"
-            )
+            status.update({"status": "ok" if items else ("payout_markers_unparsed" if status["payout_markers_in_html"] else "no_payout_markers_found"), "candidates_parsed": len(items)})
+            print(f"{source_name}: parsed {len(items)} candidates; anchors={status['anchors_with_text']}, payout_markers={status['payout_markers_in_html']}, JSON scripts={status['json_script_blocks']}; status={status['status']}")
             for item in items:
                 key = (item["name"].lower(), item.get("rate"), item.get("source_platform"))
                 if key in seen: continue
@@ -545,10 +483,7 @@ def main():
         "selected": len(selected),
         "rejected_candidates": len(rejected),
         "rejection_summary": rejection_counts,
-        "rejected_examples": [
-            {key: item.get(key) for key in ("name", "url", "source_platform", "validation_status", "rejection_reason", "rate")}
-            for item in rejected[:25]
-        ],
+        "rejected_examples": [{key: item.get(key) for key in ("name", "url", "source_platform", "validation_status", "rejection_reason", "rate")} for item in rejected[:25]],
         "kick_campaigns": kick,
         "campaigns": selected,
         "errors": errors,
@@ -558,10 +493,7 @@ def main():
             "public_aggregator_sources": ["ClipPay", "ClipRadar"],
             "scan_mode": "free_public_html",
             "parsing": ["individual_anchors", "embedded_json"],
-            "diagnostic_statuses": [
-                "ok", "payout_markers_unparsed",
-                "no_payout_markers_found", "request_failed"
-            ],
+            "diagnostic_statuses": ["ok", "payout_markers_unparsed", "no_payout_markers_found", "request_failed"],
         },
     }
     output = Path(args.output) if args.output else ROOT / "campaign-radar" / "latest.json"
