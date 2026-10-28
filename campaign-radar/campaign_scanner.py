@@ -226,7 +226,15 @@ def is_campaign_url(url):
     )
     if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}:
         return True
-    return any(path == token or path.startswith(token + "/") for token in blocked)
+    # Block directory/index pages, but allow individual campaign detail paths.
+    for token in blocked:
+        if path == token:
+            return True
+        if path.startswith(token + "/"):
+            if token == "/campaigns" and len(path.split("/")) >= 3:
+                continue
+            return True
+    return False
 
 
 ARTIFACT_NAME_RE = re.compile(
@@ -490,7 +498,7 @@ def main():
         reason = item.get("rejection_reason") or item.get("validation_status") or "unknown"
         rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
     minimum_rate = float(rules.get("minimum_rate_usd_per_1k", 1.0))
-    selected = [x for x in ranked if x.get("validation_status") == "valid" and isinstance(x.get("rate"), (int, float)) and x["rate"] >= minimum_rate and x["opportunity_score"] >= rules.get("minimum_score_to_report", 0)]
+    selected = [x for x in ranked if x.get("validation_status") == "valid" and isinstance(x.get("rate"), (int, float)) and x["rate"] >= minimum_rate and x["opportunity_score"] >= rules.get("minimum_score_to_report", 0) and x.get("new_account_compatible") is not False]
     kick = [x for x in selected if "kick" in x.get("name", "").lower() or "kick" in x.get("description", "").lower()]
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
