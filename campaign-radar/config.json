@@ -8,10 +8,46 @@
   },
   "clip_pay_index_url": "https://getclippay.com/",
   "scoring": {
-    "minimum_score_to_report": 55,
-    "minimum_rate_usd_per_1k": 2.0,
-    "preferred_categories": ["podcasting", "podcast", "entertainment", "creator", "interview", "show"],
-    "preferred_tags": ["podcast", "podcasting", "clips", "clipping", "shorts", "viral"],
-    "preferred_targets": ["tiktok", "youtube", "instagram"]
+    "minimum_score_to_report": 0,
+    "minimum_rate_usd_per_1k": 1,
+    "preferred_categories": [
+      "gaming",
+      "music",
+      "sports",
+      "entertainment",
+      "streamer",
+      "creator",
+      "ugc",
+      "product",
+      "brand",
+      "app",
+      "education",
+      "finance",
+      "lifestyle",
+      "news",
+      "viral",
+      "short-form",
+      "clipping"
+    ],
+    "preferred_tags": [
+      "clips",
+      "clipping",
+      "shorts",
+      "reels",
+      "tiktok",
+      "youtube",
+      "instagram",
+      "provided videos",
+      "source content",
+      "ugc",
+      "repost",
+      "views",
+      "campaign assets"
+    ],
+    "preferred_targets": [
+      "tiktok",
+      "youtube",
+      "instagram"
+    ]
   }
 }
