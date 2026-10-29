@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Render a vertical photo slideshow draft from a ZIP of campaign reference images.
-
-Requires FFmpeg (ffmpeg on PATH). This is a draft renderer only: it does not
-publish anything. Confirm image usage rights and campaign pre-approval first.
-"""
+"""Render a vertical photo campaign draft from a folder or ZIP of approved images."""
 from __future__ import annotations
 
 import argparse
@@ -24,25 +20,28 @@ def run(cmd: list[str]) -> None:
 
 
 def ffmpeg_escape(value: str) -> str:
-    # Escape content used as drawtext text=... filter value.
     return value.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'").replace("%", "\\%")
+
+
+def collect_images(root: Path) -> list[Path]:
+    return sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("zip_file", type=Path, help="ZIP containing approved campaign photos")
+    parser.add_argument("photos", type=Path, help="Folder of campaign photos or ZIP containing them")
     parser.add_argument("--output", type=Path, default=Path("output/campaign_drafts/skullpanda_draft.mp4"))
     parser.add_argument("--storyboard", type=Path, default=DEFAULT_STORYBOARD)
     parser.add_argument("--seconds-per-image", type=float, default=2.0)
-    parser.add_argument("--width", type=int, default=720)
-    parser.add_argument("--height", type=int, default=1280)
+    parser.add_argument("--width", type=int, default=1080)
+    parser.add_argument("--height", type=int, default=1920)
     parser.add_argument("--fps", type=int, default=24)
     args = parser.parse_args()
 
     if shutil.which("ffmpeg") is None:
         parser.error("ffmpeg was not found on PATH; install FFmpeg first")
-    if not args.zip_file.is_file():
-        parser.error(f"ZIP file does not exist: {args.zip_file}")
+    if not args.photos.exists():
+        parser.error(f"Photo source does not exist: {args.photos}")
     if args.seconds_per_image <= 0 or args.fps <= 0:
         parser.error("seconds-per-image and fps must be positive")
 
@@ -52,17 +51,17 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="photo-campaign-") as tmp:
         tmpdir = Path(tmp)
-        with zipfile.ZipFile(args.zip_file) as archive:
-            archive.extractall(tmpdir)
+        if args.photos.is_file() and args.photos.suffix.lower() == ".zip":
+            with zipfile.ZipFile(args.photos) as archive:
+                archive.extractall(tmpdir)
+            source_root = tmpdir
+        else:
+            source_root = args.photos
 
-        images = sorted(
-            p for p in tmpdir.rglob("*")
-            if p.is_file() and p.suffix.lower() in IMAGE_EXTS
-        )
+        images = collect_images(source_root)
         if not images:
-            parser.error("No JPG, PNG, or WEBP images found inside the ZIP")
+            parser.error("No JPG, PNG, or WEBP images found in the supplied photo source")
 
-        # Prefer the explicit storyboard order; append remaining images as a fallback.
         by_name = {p.name.lower(): p for p in images}
         ordered: list[Path] = []
         for slide in slides:
@@ -71,50 +70,44 @@ def main() -> int:
                 ordered.append(by_name[wanted])
         if not ordered:
             ordered = images[:len(slides)]
-        if len(ordered) < len(slides):
-            # If some preferred names are absent, fill from other archive images.
-            for image in images:
-                if image not in ordered:
-                    ordered.append(image)
-                if len(ordered) >= len(slides):
-                    break
+        for image in images:
+            if len(ordered) >= len(slides):
+                break
+            if image not in ordered:
+                ordered.append(image)
         ordered = ordered[:len(slides)]
 
         segment_paths: list[Path] = []
         duration = args.seconds_per_image
-        frame_count = max(1, round(duration * args.fps))
         for idx, (image, slide) in enumerate(zip(ordered, slides), start=1):
             segment = tmpdir / f"segment_{idx:02d}.mp4"
             title = ffmpeg_escape(str(slide.get("title", "SKULLPANDA")))
             subtitle = ffmpeg_escape(str(slide.get("subtitle", "")))
-            # Use a blurred fill behind the image so portrait and landscape photos
-            # both fill 9:16 without stretching or cutting off the full photo.
+            # Blurred-fill effect keeps the entire source photo visible instead of cropping it.
             vf = (
-                f"scale={args.width}:{args.height}:force_original_aspect_ratio=increase,"
-                f"crop={args.width}:{args.height},"
+                f"split=2[bg][fg];"
+                f"[bg]scale={args.width}:{args.height}:force_original_aspect_ratio=increase,"
+                f"crop={args.width}:{args.height},gblur=sigma=28,eq=brightness=-0.12[bg];"
+                f"[fg]scale={args.width}:{args.height}:force_original_aspect_ratio=decrease[fg];"
+                f"[bg][fg]overlay=(W-w)/2:(H-h)/2,"
                 "setsar=1,"
-                "drawbox=x=0:y=ih*0.64:w=iw:h=ih*0.36:color=black@0.48:t=fill,"
+                "drawbox=x=0:y=ih*0.64:w=iw:h=ih*0.36:color=black@0.50:t=fill,"
                 f"drawtext=text='{title}':font='DejaVu Sans':fontcolor=white:"
-                f"fontsize=34:borderw=2:bordercolor=black@0.45:"
-                "x=32:y=h*0.72,"
+                f"fontsize=52:borderw=3:bordercolor=black@0.5:x=48:y=h*0.72,"
                 f"drawtext=text='{subtitle}':font='DejaVu Sans':fontcolor=white:"
-                f"fontsize=21:borderw=1:bordercolor=black@0.35:"
-                "x=32:y=h*0.79"
+                f"fontsize=32:borderw=2:bordercolor=black@0.4:x=48:y=h*0.79"
             )
             run([
                 "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-loop", "1", "-i", str(image), "-t", str(duration),
                 "-vf", vf, "-r", str(args.fps), "-an",
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
                 "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(segment),
             ])
             segment_paths.append(segment)
 
         concat_file = tmpdir / "concat.txt"
-        concat_file.write_text(
-            "".join(f"file '{p.as_posix()}'\n" for p in segment_paths),
-            encoding="utf-8",
-        )
+        concat_file.write_text("".join(f"file '{p.as_posix()}'\n" for p in segment_paths), encoding="utf-8")
         run([
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
             "-f", "concat", "-safe", "0", "-i", str(concat_file),
