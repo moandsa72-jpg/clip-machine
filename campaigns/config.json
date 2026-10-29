@@ -5,109 +5,30 @@
       "platform": "BlastOff",
       "status": "active",
       "clips_directory": "output/rebel_audio_clips",
-      "payout": {
-        "model": "qualified_views_rpm",
-        "rpm": 13,
-        "currency": "USD",
-        "maximum_per_clip": 500
-      },
-      "rules": {
-        "clip_min_seconds": null,
-        "clip_max_seconds": null,
-        "allowed_platforms": [
-          "YouTube Shorts",
-          "TikTok",
-          "Instagram Reels"
-        ],
-        "required_hashtags": [
-          "#RebelAudio",
-          "#JingleJared"
-        ],
-        "required_mentions": [],
-        "caption_template": "",
-        "prohibited_elements": [
-          "Low-effort edits",
-          "Duplicate reposts",
-          "Spammy accounts",
-          "Off-brief content",
-          "Non-compliant clips"
-        ],
-        "submission_type": "clip_url"
-      },
-      "content_requirements": {
-        "approved_source_content_only": true,
-        "featured_person": "Jingle Jared",
-        "brand_logo_overlay_required": true,
-        "opening_hook_required": true,
-        "opening_hook_deadline_seconds": 3,
-        "captions_required": true,
-        "creator_credit_recommended": true,
-        "content_focus": [
-          "Podcasting",
-          "Rebel Audio",
-          "Funny moments",
-          "Entertaining moments"
-        ]
-      },
-      "assets": {
-        "logo_asset_required": true,
-        "source_assets_count_reported": 4,
-        "source_assets_location": "Campaign source content in BlastOff"
-      }
+      "payout": {"model": "qualified_views_rpm", "rpm": 13, "currency": "USD", "maximum_per_clip": 500},
+      "rules": {"clip_min_seconds": null, "clip_max_seconds": null, "allowed_platforms": ["YouTube Shorts", "TikTok", "Instagram Reels"], "required_hashtags": ["#RebelAudio", "#JingleJared"], "required_mentions": [], "caption_template": "", "prohibited_elements": ["Low-effort edits", "Duplicate reposts", "Spammy accounts", "Off-brief content", "Non-compliant clips"], "submission_type": "clip_url"},
+      "content_requirements": {"approved_source_content_only": true, "featured_person": "Jingle Jared", "brand_logo_overlay_required": true, "opening_hook_required": true, "opening_hook_deadline_seconds": 3, "captions_required": true, "creator_credit_recommended": true, "content_focus": ["Podcasting", "Rebel Audio", "Funny moments", "Entertaining moments"]},
+      "assets": {"logo_asset_required": true, "source_assets_count_reported": 4, "source_assets_location": "Campaign source content in BlastOff"}
     },
     "blastoff_warren_zeiders_md_motivator": {
       "name": "Warren Zeiders x MD Motivator — Car Giveaway Clipping Campaign",
       "platform": "BlastOff",
       "status": "active",
       "clips_directory": "output/clips",
-      "payout": {
-        "model": "qualified_views_rpm",
-        "rpm": 4,
-        "currency": "USD",
-        "maximum_per_clip": 500,
-        "minimum_qualified_views": 300,
-        "total_budget": 1500
-      },
-      "rules": {
-        "clip_min_seconds": null,
-        "clip_max_seconds": null,
-        "allowed_platforms": [
-          "YouTube Shorts",
-          "TikTok",
-          "Instagram Reels"
-        ],
-        "required_hashtags": [
-          "#WarrenZeiders"
-        ],
-        "required_mentions": [],
-        "caption_template": "",
-        "prohibited_elements": [
-          "Low-effort reposts",
-          "Spammy reposts",
-          "Off-brief clips",
-          "Negative or off-brand content"
-        ],
-        "submission_type": "clip_url"
-      },
-      "content_requirements": {
-        "warren_zeiders_must_be_present": true,
-        "recommended_song": true,
-        "recommended_song_min_volume_percent": 10,
-        "captions_required": true,
-        "creator_credit_recommended": true,
-        "positive_philanthropy_context": true,
-        "content_focus": [
-          "Warren Zeiders getting the car",
-          "Warren Zeiders and MD Motivator reactions",
-          "Car handoff to the family",
-          "Emotional moments",
-          "Creator personality"
-        ]
-      },
-      "assets": {
-        "source_assets_count": 18,
-        "source_assets_location": "Campaign source content in BlastOff"
-      }
+      "payout": {"model": "qualified_views_rpm", "rpm": 4, "currency": "USD", "maximum_per_clip": 500, "minimum_qualified_views": 300, "total_budget": 1500},
+      "rules": {"clip_min_seconds": null, "clip_max_seconds": null, "allowed_platforms": ["YouTube Shorts", "TikTok", "Instagram Reels"], "required_hashtags": ["#WarrenZeiders"], "required_mentions": [], "caption_template": "", "prohibited_elements": ["Low-effort reposts", "Spammy reposts", "Off-brief clips", "Negative or off-brand content"], "submission_type": "clip_url"},
+      "content_requirements": {"warren_zeiders_must_be_present": true, "recommended_song": true, "recommended_song_min_volume_percent": 10, "captions_required": true, "creator_credit_recommended": true, "positive_philanthropy_context": true, "content_focus": ["Warren Zeiders getting the car", "Warren Zeiders and MD Motivator reactions", "Car handoff to the family", "Emotional moments", "Creator personality"]},
+      "assets": {"source_assets_count": 18, "source_assets_location": "Campaign source content in BlastOff"}
+    },
+    "popmart_skullpanda": {
+      "name": "Pop Mart Americas Inc. — SKULLPANDA at Doja Cat’s 31st Birthday Party",
+      "platform": "Content Rewards",
+      "status": "active",
+      "clips_directory": "output/campaign_drafts",
+      "payout": {"model": "qualified_views_rpm", "rpm": 10, "currency": "USD", "minimum_per_clip": 10, "maximum_per_clip": 1000, "budget_remaining": 1862, "budget_total": 3000},
+      "rules": {"clip_min_seconds": 10, "clip_max_seconds": null, "allowed_platforms": ["TikTok", "Instagram Reels", "YouTube Shorts", "X"], "required_hashtags": ["#skullpanda"], "required_mentions": ["@popmart_us"], "caption_template": "SKULLPANDA", "prohibited_elements": ["Reposted or recycled content"], "submission_type": "draft_preapproval"},
+      "content_requirements": {"approved_source_content_only": true, "featured_person": "Doja Cat", "brand_logo_overlay_required": false, "opening_hook_required": false, "captions_required": false, "preapproval_required": true, "content_focus": ["SKULLPANDA", "Doja Cat birthday", "Pop Mart", "collectible art", "birthday party"]},
+      "assets": {"source_assets_count_reported": 36, "source_assets_location": "Campaign-approved reference photos supplied for this campaign", "storyboard": "campaigns/popmart_skullpanda/storyboard.json"}
     }
   }
 }
