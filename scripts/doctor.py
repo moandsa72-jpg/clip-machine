@@ -4,7 +4,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -27,19 +26,12 @@ def check_command(name):
     if not path:
         return False, f"{name} not found"
     result = run_command([name, "-version"])
-    if result.returncode != 0:
-        return False, f"{name} is not executable"
-    return True, f"{name} OK"
+    return (True, f"{name} OK") if result.returncode == 0 else (False, f"{name} is not executable")
 
 
 def check_python_scripts():
     scripts = sorted((ROOT / "scripts").glob("*.py"))
-    result = subprocess.run(
-        [sys.executable, "-m", "py_compile", *[str(path) for path in scripts]],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    )
+    result = subprocess.run([sys.executable, "-m", "py_compile", *[str(path) for path in scripts]], cwd=ROOT, capture_output=True, text=True)
     return result.returncode == 0, "Python scripts compile" if result.returncode == 0 else result.stderr.strip()
 
 
@@ -53,7 +45,9 @@ def check_campaign(campaign_id):
     return True, f"campaign OK: {campaign_id}"
 
 
-def check_logo():
+def check_logo(required):
+    if not required:
+        return True, "campaign logo not required"
     logo = ROOT / "rebel_audio_logo_transparent-1 (1).png"
     if logo.exists() and logo.stat().st_size > 0:
         return True, "campaign logo OK"
@@ -61,33 +55,24 @@ def check_logo():
 
 
 def check_ffmpeg_probe():
-    result = run_command([
-        "ffprobe", "-v", "error", "-f", "lavfi", "-i", "color=s=16x16:d=0.1",
-        "-show_entries", "format=duration", "-of", "default=nw=1:nk=1",
-    ])
+    result = run_command(["ffprobe", "-v", "error", "-f", "lavfi", "-i", "color=s=16x16:d=0.1", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"])
     return result.returncode == 0, "ffprobe functional" if result.returncode == 0 else result.stderr.strip()
 
 
 def main():
     campaign_id = sys.argv[1] if len(sys.argv) > 1 else None
-    checks = []
+    checks = [check_command("ffmpeg"), check_command("ffprobe"), check_ffmpeg_probe(), check_python_scripts()]
 
-    checks.append(check_command("ffmpeg"))
-    checks.append(check_command("ffprobe"))
-    checks.append(check_ffmpeg_probe())
-    checks.append(check_python_scripts())
-
+    required_logo = False
     if campaign_id:
         checks.append(check_campaign(campaign_id))
-
-    # Logo is required by the current campaign setup. Keep this a hard check
-    # so a missing asset fails before an expensive processing run.
-    checks.append(check_logo())
+        campaign = next((item for item in load_campaigns() if item.get("id") == campaign_id), None)
+        required_logo = bool((campaign or {}).get("content_requirements", {}).get("brand_logo_overlay_required"))
+    checks.append(check_logo(required_logo))
 
     failed = [message for ok, message in checks if not ok]
     for ok, message in checks:
         print(("OK      " if ok else "ERROR   ") + message)
-
     print(f"Doctor complete: {len(checks) - len(failed)} passed, {len(failed)} failed")
     if failed:
         raise SystemExit(1)
