@@ -1,22 +1,23 @@
-# clip Machine workflow
-name: clip Machine - Transcribe and Find Moments
+# Clip Machine main workflow
+name: Clip Machine - Main Campaign Runner
 
 on:
   workflow_dispatch:
     inputs:
       campaign_id:
-        description: "Campaign to create clips for"
+        description: "Campaign to create content for"
         required: true
         type: choice
         options:
           - blastoff_jingle_jared_rebel_audio
           - blastoff_warren_zeiders_md_motivator
+          - popmart_skullpanda
       video_url:
-        description: "Direct HTTPS video URL or public Google Drive folder (leave empty to use input/)"
+        description: "Video URL or public Google Drive folder for video campaigns; ignored for SKULLPANDA photo mode"
         required: false
         type: string
       posting_platform:
-        description: "Posting stage: dry-run by default; unsupported direct publishing uses manual handoffs"
+        description: "Posting stage"
         required: true
         type: choice
         options:
@@ -27,7 +28,7 @@ on:
           - facebook_reels
         default: none
       publish_now:
-        description: "Explicitly authorize publishing eligible YouTube queue items (YouTube defaults to private)"
+        description: "Explicitly authorize publishing eligible YouTube queue items"
         required: true
         type: boolean
         default: false
@@ -40,8 +41,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  create-clips:
-    name: Download, Analyze, and Create Clips
+  create-content:
+    name: Create selected campaign content
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
@@ -64,29 +65,59 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install faster-whisper gdown opencv-python mediapipe==0.10.21
 
-      - name: Check processing scripts
-        run: python -m py_compile scripts/*.py
-
-      - name: Run pre-flight doctor
+      - name: Check scripts and campaign
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
-        run: python scripts/doctor.py "$CAMPAIGN_ID"
-
-      - name: Create working directories
         run: |
-          mkdir -p input
-          mkdir -p work
-          mkdir -p work/videos
-          mkdir -p work/drive_videos
-          mkdir -p work/state
-          mkdir -p output/clips
-          mkdir -p output/rebel_audio_clips
-          mkdir -p output/posting_packages
-          mkdir -p output/posting_dashboard
-          mkdir -p output/campaign_opportunities
-          mkdir -p output/posting_queue
+          python -m py_compile scripts/*.py
+          python scripts/doctor.py "$CAMPAIGN_ID"
 
+      - name: Prepare directories
+        run: |
+          mkdir -p input work work/state work/drive_videos output/clips output/rebel_audio_clips output/campaign_drafts output/posting_packages output/posting_dashboard output/campaign_opportunities output/posting_queue
+
+      # ------------------------------------------------------------
+      # SKULLPANDA PHOTO CAMPAIGN
+      # ------------------------------------------------------------
+      - name: Render SKULLPANDA photo draft
+        if: inputs.campaign_id == 'popmart_skullpanda'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PHOTO_SOURCE=""
+          if find input -maxdepth 1 -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) -print -quit | grep -q .; then
+            PHOTO_SOURCE="input"
+          elif [ -f "input/Doja Cat x Pop Mart.zip" ]; then
+            PHOTO_SOURCE="input/Doja Cat x Pop Mart.zip"
+          else
+            echo "SKULLPANDA needs campaign photos in input/ (JPG/PNG/WEBP) or input/Doja Cat x Pop Mart.zip"
+            exit 1
+          fi
+          python scripts/create_photo_campaign_draft.py "$PHOTO_SOURCE" --output output/campaign_drafts/skullpanda_draft.mp4
+
+      - name: Prepare SKULLPANDA posting package
+        if: inputs.campaign_id == 'popmart_skullpanda'
+        run: |
+          set -euo pipefail
+          mkdir -p output/posting_packages/popmart_skullpanda
+          cp campaigns/popmart_skullpanda/posting_package.md output/posting_packages/popmart_skullpanda/
+          cp campaigns/popmart_skullpanda/storyboard.json output/posting_packages/popmart_skullpanda/
+          cat > output/posting_packages/popmart_skullpanda/post.json <<'JSON'
+          {
+            "campaign_id": "popmart_skullpanda",
+            "title": "SKULLPANDA at Doja Cat’s 31st Birthday Party",
+            "caption": "SKULLPANDA\n#skullpanda @popmart_us",
+            "platforms": ["TikTok", "Instagram Reels", "YouTube Shorts", "X"],
+            "status": "draft_requires_campaign_review",
+            "preapproval_required": true
+          }
+          JSON
+
+      # ------------------------------------------------------------
+      # VIDEO CAMPAIGNS
+      # ------------------------------------------------------------
       - name: Select video source
+        if: inputs.campaign_id != 'popmart_skullpanda'
         id: source
         env:
           VIDEO_URL: ${{ inputs.video_url }}
@@ -106,351 +137,145 @@ jobs:
           fi
           echo "source_key=$SOURCE_KEY" >> "$GITHUB_OUTPUT"
 
-      - name: Restore processing state
-        uses: actions/cache@v4
-        with:
-          path: work/state
-          key: clip-machine-state-${{ github.ref_name }}-${{ inputs.campaign_id }}-${{ steps.source.outputs.source_key }}-${{ hashFiles('input/**') }}-${{ github.run_id }}
-          restore-keys: |
-            clip-machine-state-${{ github.ref_name }}-${{ inputs.campaign_id }}-${{ steps.source.outputs.source_key }}-${{ hashFiles('input/**') }}-
-
       - name: Download video from URL
-        if: steps.source.outputs.source_type == 'url'
+        if: inputs.campaign_id != 'popmart_skullpanda' && steps.source.outputs.source_type == 'url'
         env:
           VIDEO_URL: ${{ inputs.video_url }}
-        run: |
-          set -euo pipefail
-          python scripts/download_video.py "$VIDEO_URL" work/source_video.mp4
+        run: python scripts/download_video.py "$VIDEO_URL" work/source_video.mp4
 
       - name: Download Google Drive folder
-        if: steps.source.outputs.source_type == 'drive_folder'
+        if: inputs.campaign_id != 'popmart_skullpanda' && steps.source.outputs.source_type == 'drive_folder'
         env:
           VIDEO_URL: ${{ inputs.video_url }}
         run: |
           set -euo pipefail
           python -m gdown "$VIDEO_URL" --folder --output work/drive_videos
-          COUNT="$(find work/drive_videos -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) | wc -l)"
-          if [ "$COUNT" -eq 0 ]; then
-            echo "No supported videos were found in the Google Drive folder."
-            exit 1
-          fi
-          echo "Found $COUNT video(s)."
+          test "$(find work/drive_videos -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) | wc -l)" -gt 0
 
       - name: Prepare video list
+        if: inputs.campaign_id != 'popmart_skullpanda'
         env:
           SOURCE_TYPE: ${{ steps.source.outputs.source_type }}
-        shell: bash
         run: |
           set -euo pipefail
           : > work/video_list
           case "$SOURCE_TYPE" in
-            local)
-              find input -maxdepth 1 -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) ! -name '.gitkeep' -print >> work/video_list
-              ;;
-            url)
-              echo "work/source_video.mp4" >> work/video_list
-              ;;
-            drive_folder)
-              find work/drive_videos -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list
-              ;;
+            local) find input -maxdepth 1 -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list ;;
+            url) echo work/source_video.mp4 >> work/video_list ;;
+            drive_folder) find work/drive_videos -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list ;;
           esac
           sort -u -o work/video_list work/video_list
-          VIDEO_COUNT=$(wc -l < work/video_list)
-          echo "Videos to process: $VIDEO_COUNT"
+          test "$(wc -l < work/video_list)" -gt 0
           cat work/video_list
-          test "$VIDEO_COUNT" -gt 0
 
-      - name: Process videos
+      - name: Process video campaigns
+        if: inputs.campaign_id != 'popmart_skullpanda'
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         shell: bash
         run: |
           set -euo pipefail
           INDEX=0
-
           while IFS= read -r VIDEO; do
             INDEX=$((INDEX + 1))
-            echo "======================================"
-            echo "Processing video $INDEX"
-            echo "Video: $VIDEO"
-            echo "======================================"
-
             TRANSCRIPT="work/transcript_${INDEX}.json"
             RAW_MOMENTS="work/moments_raw_${INDEX}.json"
             MOMENTS="work/moments_${INDEX}.json"
             CONTENT_TYPE="work/content_type_${INDEX}.json"
             FACES="work/faces_${INDEX}.json"
-            STATE="work/state/video_${INDEX}.json"
 
-            if python scripts/state_manager.py is-complete "$STATE" transcribed && test -s "$TRANSCRIPT"; then
-              echo "RESUME  video $INDEX: transcription already complete"
-            else
-              if python scripts/transcribe.py "$VIDEO" "$TRANSCRIPT"; then
-                python scripts/state_manager.py mark-complete "$STATE" transcribed "$TRANSCRIPT"
-              else
-                python scripts/state_manager.py mark-failed "$STATE" transcribed "transcription failed"
-                exit 1
-              fi
-            fi
+            python scripts/transcribe.py "$VIDEO" "$TRANSCRIPT"
+            python scripts/content_detector.py "$TRANSCRIPT" "$CONTENT_TYPE"
+            python scripts/face_tracking.py "$VIDEO" "$FACES"
+            python scripts/find_moments.py "$TRANSCRIPT" "$RAW_MOMENTS"
 
-            if python scripts/state_manager.py is-complete "$STATE" content_detected && test -s "$CONTENT_TYPE"; then
-              echo "RESUME  video $INDEX: content detection already complete"
-            else
-              if python scripts/content_detector.py "$TRANSCRIPT" "$CONTENT_TYPE"; then
-                python scripts/state_manager.py mark-complete "$STATE" content_detected "$CONTENT_TYPE"
-              else
-                python scripts/state_manager.py mark-failed "$STATE" content_detected "content detection failed"
-                exit 1
-              fi
-            fi
-
-            if python scripts/state_manager.py is-complete "$STATE" face_tracking && test -s "$FACES"; then
-              echo "RESUME  video $INDEX: face tracking already complete"
-            else
-              if python scripts/face_tracking.py "$VIDEO" "$FACES"; then
-                python scripts/state_manager.py mark-complete "$STATE" face_tracking "$FACES"
-              else
-                python scripts/state_manager.py mark-failed "$STATE" face_tracking "face tracking failed"
-                exit 1
-              fi
-            fi
-
-            if python scripts/state_manager.py is-complete "$STATE" moments_found && test -s "$RAW_MOMENTS"; then
-              echo "RESUME  video $INDEX: moment detection already complete"
-            else
-              if python scripts/find_moments.py "$TRANSCRIPT" "$RAW_MOMENTS"; then
-                COUNT="$(python - "$RAW_MOMENTS" <<'PY'
-          import json, sys
-          with open(sys.argv[1], encoding='utf-8') as f:
-              data = json.load(f)
-          items = data if isinstance(data, list) else data.get('moments', []) if isinstance(data, dict) else []
-          print(len(items))
+            COUNT="$(python - "$RAW_MOMENTS" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(len(d if isinstance(d,list) else d.get('moments',[])))
           PY
           )"
-                if [ "$COUNT" -eq 0 ]; then
-                  DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO" || true)"
-                  python - "$RAW_MOMENTS" "$DURATION" <<'PY'
-          import json, sys
-          try:
-              duration = float(sys.argv[2])
-          except (TypeError, ValueError):
-              duration = 0
-          if 0 < duration < 180:
-              with open(sys.argv[1], 'w', encoding='utf-8') as f:
-                  json.dump([{
-                      'start': 0.0,
-                      'end': duration,
-                      'score': 0,
-                      'text': 'Short-source fallback clip',
-                      'fallback': True,
-                      'fallback_reason': 'zero_moments_under_three_minutes'
-                  }], f, indent=2)
+            if [ "$COUNT" -eq 0 ]; then
+              DURATION="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$VIDEO")"
+              python - "$RAW_MOMENTS" "$DURATION" <<'PY'
+          import json,sys
+          duration=float(sys.argv[2])
+          if duration < 180:
+              json.dump([{'start':0.0,'end':duration,'score':0,'text':'Short-source fallback clip','fallback':True}],open(sys.argv[1],'w',encoding='utf-8'),indent=2)
           PY
-                  COUNT="$(python - "$RAW_MOMENTS" <<'PY'
-          import json, sys
-          with open(sys.argv[1], encoding='utf-8') as f:
-              data = json.load(f)
-          items = data if isinstance(data, list) else data.get('moments', []) if isinstance(data, dict) else []
-          print(len(items))
-          PY
-          )"
-                  if [ "$COUNT" -eq 0 ]; then
-                    echo "No usable moments found for $VIDEO"
-                    continue
-                  fi
-                fi
-                python scripts/state_manager.py mark-complete "$STATE" moments_found "$RAW_MOMENTS"
-              else
-                python scripts/state_manager.py mark-failed "$STATE" moments_found "moment detection failed"
-                exit 1
-              fi
             fi
 
-            if python scripts/state_manager.py is-complete "$STATE" moments_optimized && test -s "$MOMENTS"; then
-              echo "RESUME  video $INDEX: moment optimization already complete"
+            python scripts/optimize_moments.py "$TRANSCRIPT" "$RAW_MOMENTS" "$MOMENTS" campaigns/config.json "$CAMPAIGN_ID"
+
+            if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
+              OUTPUT_DIR="output/rebel_audio_clips/video_${INDEX}"
+              python scripts/make_clips.py "$VIDEO" "$MOMENTS" "$OUTPUT_DIR" "$TRANSCRIPT" "rebel_audio_logo_transparent-1 (1).png" "$CONTENT_TYPE" "$FACES"
             else
-              if python scripts/optimize_moments.py \
-                "$TRANSCRIPT" \
-                "$RAW_MOMENTS" \
-                "$MOMENTS" \
-                campaigns/config.json \
-                "$CAMPAIGN_ID"; then
-                python scripts/state_manager.py mark-complete "$STATE" moments_optimized "$MOMENTS"
-              else
-                python scripts/state_manager.py mark-failed "$STATE" moments_optimized "moment optimization failed"
-                exit 1
-              fi
+              OUTPUT_DIR="output/clips/video_${INDEX}"
+              python scripts/make_clips.py "$VIDEO" "$MOMENTS" "$OUTPUT_DIR" "$TRANSCRIPT" "$CONTENT_TYPE" "$FACES"
             fi
-
-            case "$CAMPAIGN_ID" in
-              blastoff_jingle_jared_rebel_audio)
-                OUTPUT_DIR="output/rebel_audio_clips/video_${INDEX}"
-                mkdir -p "$OUTPUT_DIR"
-                ;;
-              blastoff_warren_zeiders_md_motivator)
-                OUTPUT_DIR="output/clips/video_${INDEX}"
-                mkdir -p "$OUTPUT_DIR"
-                ;;
-              *)
-                echo "Unsupported campaign: $CAMPAIGN_ID"
-                exit 1
-                ;;
-            esac
-
-            if python scripts/state_manager.py is-complete "$STATE" rendered && find "$OUTPUT_DIR" -maxdepth 1 -type f -name '*.mp4' -print -quit | grep -q .; then
-              echo "RESUME  video $INDEX: rendering already complete"
-            else
-              if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
-                if python scripts/make_clips.py \
-                  "$VIDEO" \
-                  "$MOMENTS" \
-                  "$OUTPUT_DIR" \
-                  "$TRANSCRIPT" \
-                  "rebel_audio_logo_transparent-1 (1).png" \
-                  "$CONTENT_TYPE" \
-                  "$FACES"; then
-                  python scripts/state_manager.py mark-complete "$STATE" rendered "$OUTPUT_DIR"
-                else
-                  python scripts/state_manager.py mark-failed "$STATE" rendered "clip rendering failed"
-                  exit 1
-                fi
-              else
-                if python scripts/make_clips.py \
-                  "$VIDEO" \
-                  "$MOMENTS" \
-                  "$OUTPUT_DIR" \
-                  "$TRANSCRIPT" \
-                  "$CONTENT_TYPE" \
-                  "$FACES"; then
-                  python scripts/state_manager.py mark-complete "$STATE" rendered "$OUTPUT_DIR"
-                else
-                  python scripts/state_manager.py mark-failed "$STATE" rendered "clip rendering failed"
-                  exit 1
-                fi
-              fi
-            fi
-
-            echo "Finished video $INDEX"
           done < work/video_list
 
-      - name: Validate generated clips
+      - name: Validate video campaign clips
+        if: inputs.campaign_id != 'popmart_skullpanda'
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
-          set -euo pipefail
           if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
-            CLIPS_DIR="output/rebel_audio_clips"
+            python scripts/validate_clips.py output/rebel_audio_clips
           else
-            CLIPS_DIR="output/clips"
+            python scripts/validate_clips.py output/clips
           fi
-          python scripts/validate_clips.py "$CLIPS_DIR"
 
-      - name: Verify campaign assets
-        run: |
-          set -euo pipefail
-          test -f "rebel_audio_logo_transparent-1 (1).png"
-          echo "Logo FOUND."
-          ls -lh "rebel_audio_logo_transparent-1 (1).png"
-
-      - name: Generate selected campaign posting package
+      - name: Generate video campaign posting package
+        if: inputs.campaign_id != 'popmart_skullpanda'
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
-          set -euo pipefail
-          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then
-            POSTING_CLIPS_DIR="output/rebel_audio_clips"
-          else
-            POSTING_CLIPS_DIR="output/clips"
-          fi
-          python scripts/create_posting_packages.py \
-            campaigns/config.json \
-            "$POSTING_CLIPS_DIR" \
-            output/posting_packages \
-            "$CAMPAIGN_ID"
+          if [ "$CAMPAIGN_ID" = "blastoff_jingle_jared_rebel_audio" ]; then POSTING_CLIPS_DIR=output/rebel_audio_clips; else POSTING_CLIPS_DIR=output/clips; fi
+          python scripts/create_posting_packages.py campaigns/config.json "$POSTING_CLIPS_DIR" output/posting_packages "$CAMPAIGN_ID"
+          python scripts/create_posting_dashboard.py "output/posting_packages/$CAMPAIGN_ID/posting_package.json" "output/posting_dashboard/$CAMPAIGN_ID"
 
-      - name: Generate posting dashboard
-        env:
-          CAMPAIGN_ID: ${{ inputs.campaign_id }}
+      - name: Refresh campaign radar
         run: |
-          set -euo pipefail
-          python scripts/create_posting_dashboard.py \
-            "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
-            "output/posting_dashboard/$CAMPAIGN_ID"
-
-      - name: Refresh free public campaign radar
-        shell: bash
-        run: |
-          set -euo pipefail
           if ! python3 campaign-radar/campaign_scanner.py; then
             printf '%s\n' '{"campaigns":[],"kick_campaigns":[],"errors":["public campaign scan failed"]}' > campaign-radar/latest.json
           fi
-
-      - name: Expand free radar across additional trusted public sources
-        shell: bash
-        run: |
-          set -euo pipefail
           python3 campaign-radar/expand_public_sources.py
 
-      - name: Match clips to campaign opportunities
+      - name: Match campaign opportunities
         env:
           CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
-          set -euo pipefail
-          python scripts/create_campaign_opportunities.py \
-            campaign-radar/latest.json \
-            "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
-            output/campaign_opportunities/opportunities.json
-          python scripts/create_posting_queue.py \
-            output/campaign_opportunities/opportunities.json \
-            "output/posting_packages/$CAMPAIGN_ID/posting_package.json" \
-            output/posting_queue/posting_queue.json
-
-      - name: Run posting stage
-        if: inputs.posting_platform != 'none'
-        env:
-          POSTING_PLATFORM: ${{ inputs.posting_platform }}
-          PUBLISH_NOW: ${{ inputs.publish_now }}
-          YOUTUBE_ACCESS_TOKEN: ${{ secrets.YOUTUBE_ACCESS_TOKEN }}
-          YOUTUBE_PRIVACY: private
-        run: |
-          set -euo pipefail
-          if [ "$PUBLISH_NOW" = "true" ] && [ "$POSTING_PLATFORM" = "youtube_shorts" ]; then
-            python scripts/publish_queue.py output/posting_queue/posting_queue.json --platform "$POSTING_PLATFORM" --execute
+          if [ -f "output/posting_packages/$CAMPAIGN_ID/posting_package.json" ]; then
+            python scripts/create_campaign_opportunities.py campaign-radar/latest.json "output/posting_packages/$CAMPAIGN_ID/posting_package.json" output/campaign_opportunities/opportunities.json
+            python scripts/create_posting_queue.py output/campaign_opportunities/opportunities.json "output/posting_packages/$CAMPAIGN_ID/posting_package.json" output/posting_queue/posting_queue.json
           else
-            python scripts/publish_queue.py output/posting_queue/posting_queue.json --platform "$POSTING_PLATFORM"
+            echo "Photo campaign uses its dedicated pre-approval package."
           fi
 
-      - name: Upload selected campaign posting package
+      - name: Upload selected campaign package
         uses: actions/upload-artifact@v4
         with:
-          name: campaign-posting-package
+          name: campaign-posting-package-${{ inputs.campaign_id }}
           path: output/posting_packages/
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload posting dashboard
+      - name: Upload photo draft
+        if: inputs.campaign_id == 'popmart_skullpanda'
         uses: actions/upload-artifact@v4
         with:
-          name: posting-dashboard
-          path: output/posting_dashboard/
+          name: skullpanda-draft
+          path: output/campaign_drafts/skullpanda_draft.mp4
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload campaign opportunities and posting queue
+      - name: Upload video clips
+        if: inputs.campaign_id != 'popmart_skullpanda'
         uses: actions/upload-artifact@v4
         with:
-          name: campaign-opportunities-and-queue
-          path: |
-            campaign-radar/latest.json
-            output/campaign_opportunities/
-            output/posting_queue/
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload clips and analysis
-        uses: actions/upload-artifact@v4
-        with:
-          name: clip-machine-results
+          name: clip-machine-results-${{ inputs.campaign_id }}
           path: |
             output/clips/**/*.mp4
             output/clips/**/*.json
@@ -459,11 +284,7 @@ jobs:
             work/transcript_*.json
             work/moments_*.json
             work/moments_raw_*.json
-            work/optimized_moments_*.json
             work/content_type_*.json
             work/faces_*.json
-            work/state/*.json
-            output/clips/validation_report.json
-            output/rebel_audio_clips/validation_report.json
           if-no-files-found: error
           retention-days: 7
