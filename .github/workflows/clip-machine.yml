@@ -12,6 +12,7 @@ on:
           - blastoff_jingle_jared_rebel_audio
           - blastoff_warren_zeiders_md_motivator
           - popmart_skullpanda
+          - call_of_duty_mw4_s1
       video_url:
         description: "Video URL or public Google Drive folder for video campaigns; ignored for SKULLPANDA photo mode"
         required: false
@@ -121,10 +122,14 @@ jobs:
         id: source
         env:
           VIDEO_URL: ${{ inputs.video_url }}
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "$VIDEO_URL" ]; then
+          if [ "$CAMPAIGN_ID" = "call_of_duty_mw4_s1" ]; then
+            SOURCE_KEY="call_of_duty_mw4_s1"
+            echo "source_type=local" >> "$GITHUB_OUTPUT"
+          elif [ -n "$VIDEO_URL" ]; then
             SOURCE_KEY="$(printf '%s' "$VIDEO_URL" | sha256sum | cut -d' ' -f1)"
             if [[ "$VIDEO_URL" == *"drive.google.com/drive/folders/"* ]]; then
               echo "source_type=drive_folder" >> "$GITHUB_OUTPUT"
@@ -156,13 +161,22 @@ jobs:
         if: inputs.campaign_id != 'popmart_skullpanda'
         env:
           SOURCE_TYPE: ${{ steps.source.outputs.source_type }}
+          CAMPAIGN_ID: ${{ inputs.campaign_id }}
         run: |
           set -euo pipefail
           : > work/video_list
           case "$SOURCE_TYPE" in
-            local) find input -maxdepth 1 -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list ;;
+            local)
+              if [ "$CAMPAIGN_ID" = "call_of_duty_mw4_s1" ]; then
+                COD_SOURCE="input/Call of Duty_ Modern Warfare 4 _ Season 1 Launch Trailer(480P).mp4"
+                test -s "$COD_SOURCE" || { echo "Required official Call of Duty trailer is missing: $COD_SOURCE"; exit 1; }
+                printf '%s\\n' "$COD_SOURCE" >> work/video_list
+              else
+                find input -maxdepth 1 -type f \\( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \\) -print >> work/video_list
+              fi
+              ;;
             url) echo work/source_video.mp4 >> work/video_list ;;
-            drive_folder) find work/drive_videos -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list ;;
+            drive_folder) find work/drive_videos -type f \\( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \\) -print >> work/video_list ;;
           esac
           sort -u -o work/video_list work/video_list
           test "$(wc -l < work/video_list)" -gt 0
