@@ -63,7 +63,7 @@ def build_visual_moments(duration, cuts):
     for candidate in sorted(candidates, key=lambda item: item["score"], reverse=True):
         if all(
             max(0.0, min(candidate["end"], item["end"]) - max(candidate["start"], item["start"]))
-            / max(candidate["end"], item["end"] - min(candidate["start"], item["start"]))
+            / max(max(candidate["end"], item["end"]) - min(candidate["start"], item["start"]), 1.0)
             < 0.35
             for item in selected
         ):
