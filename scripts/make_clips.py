@@ -165,7 +165,7 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
     hook_filter = ""
     if hook_text and str(hook_text).strip():
         hook_text_path = output_path.with_suffix(".hook.txt")
-        wrapped_hook = textwrap.fill(" ".join(str(hook_text).upper().split()), width=21)
+        wrapped_hook = textwrap.fill(" ".join(str(hook_text).upper().split()), width=24)
         hook_text_path.write_text(wrapped_hook, encoding="utf-8")
         hook_filter_path = str(hook_text_path.resolve())
         hook_filter_path = (
@@ -174,17 +174,16 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
             .replace(",", "\\,").replace("[", "\\[").replace("]", "\\]")
         )
         if visual_only:
-            # COD visual-only edit: cinematic title panel in the upper third,
-            # with a gold accent and a small campaign label. Kept out of the
-            # center action area and shown only during the opening 3 seconds.
+            # COD visual-only edit: compact cinematic title panel in the upper safe zone.
+            # It stays clear of the center action area and leaves room for the lower caption zone.
             hook_filter = (
-                "drawbox=x=54:y=150:w=972:h=300:color=black@0.68:t=fill:enable='lt(t,3)',"
-                "drawbox=x=54:y=150:w=14:h=300:color=0xE6B323@1:t=fill:enable='lt(t,3)',"
+                "drawbox=x=54:y=80:w=972:h=270:color=black@0.68:t=fill:enable='lt(t,3)',"
+                "drawbox=x=54:y=80:w=14:h=270:color=0xE6B323@1:t=fill:enable='lt(t,3)',"
                 "drawtext=text='MW4  /  SEASON 01':fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':"
-                "fontsize=32:fontcolor=0xF2C14E:x=100:y=190:enable='lt(t,3)',"
+                "fontsize=30:fontcolor=0xF2C14E:x=100:y=112:enable='lt(t,3)',"
                 f"drawtext=textfile='{hook_filter_path}':fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':"
-                "fontsize=78:fontcolor=white:line_spacing=8:borderw=3:bordercolor=black:"
-                "x=100:y=245:alpha='if(lt(t,0.18),t/0.18,1)':enable='lt(t,3)'"
+                "fontsize=68:fontcolor=white:line_spacing=4:borderw=3:bordercolor=black:"
+                "x=100:y=158:alpha='if(lt(t,0.18),t/0.18,1)':enable='lt(t,3)'"
             )
         else:
             hook_filter = (
