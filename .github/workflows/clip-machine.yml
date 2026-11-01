@@ -201,7 +201,22 @@ jobs:
             python scripts/transcribe.py "$VIDEO" "$TRANSCRIPT"
             python scripts/content_detector.py "$TRANSCRIPT" "$CONTENT_TYPE"
             python scripts/face_tracking.py "$VIDEO" "$FACES"
-            python scripts/find_moments.py "$TRANSCRIPT" "$RAW_MOMENTS"
+            if [ "$CAMPAIGN_ID" = "call_of_duty_mw4_s1" ]; then
+              SEGMENT_COUNT="$(python - "$TRANSCRIPT" <<'PY'
+          import json,sys
+          data=json.load(open(sys.argv[1],encoding='utf-8'))
+          print(len(data.get('segments',[])))
+          PY
+          )"
+              if [ "$SEGMENT_COUNT" -eq 0 ]; then
+                echo "No spoken transcript detected; using visual scene-based moment detection for this trailer."
+                python scripts/find_visual_moments.py "$VIDEO" "$RAW_MOMENTS"
+              else
+                python scripts/find_moments.py "$TRANSCRIPT" "$RAW_MOMENTS"
+              fi
+            else
+              python scripts/find_moments.py "$TRANSCRIPT" "$RAW_MOMENTS"
+            fi
 
             COUNT="$(python - "$RAW_MOMENTS" <<'PY'
           import json,sys
