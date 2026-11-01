@@ -131,7 +131,7 @@ def candidates(segments, start, end, hook_window):
     return result
 
 
-def optimize(moment, segments, focus_terms, hook_window):
+def optimize(moment, segments, focus_terms, hook_window, campaign_id=None):
     original_start = float(moment.get("start", 0))
     original_end = float(moment.get("end", 0))
     start, end = original_start, original_end
@@ -169,6 +169,27 @@ def optimize(moment, segments, focus_terms, hook_window):
     result["hook_text"] = select_short_hook(hook_source, focus_terms)
     result["hook_word_count"] = len(words(result["hook_text"]))
     result["hook_optimized"] = bool(best and start != original_start and not fallback)
+
+    # The COD trailer has no dialogue transcript, so use distinct editorial
+    # hooks tied to the approved Season 01 campaign context rather than
+    # pretending these lines were spoken in the footage.
+    if campaign_id == "call_of_duty_mw4_s1" and bool(moment.get("visual_only")):
+        if original_start < 30:
+            visual_hook = "THE NEXT WAR STARTS NOW"
+        elif original_start < 90:
+            visual_hook = "THE FIGHT IS FAR FROM OVER"
+        elif original_start < 108:
+            visual_hook = "NO ROOM FOR A SINGLE MISTAKE"
+        elif original_start < 126:
+            visual_hook = "THIS IS WHAT SEASON ONE BRINGS"
+        else:
+            visual_hook = "READY FOR YOUR NEXT DEPLOYMENT?"
+        result["hook_text"] = visual_hook
+        result["hook_word_count"] = len(words(visual_hook))
+        result["hook_score"] = 25.0
+        result["hook_source_text"] = "Curated campaign hook; not dialogue or transcript"
+        result["hook_optimized"] = True
+        result["hook_style"] = "mw4_cinematic"
     result["hook_deadline_seconds"] = hook_window
     result["edge_silence_trimmed"] = bool(start != original_start or end != original_end)
     return result
@@ -207,7 +228,7 @@ def main():
     if not isinstance(moments, list):
         moments = []
 
-    optimized = [optimize(moment, segments, focus_terms, hook_window) for moment in moments]
+    optimized = [optimize(moment, segments, focus_terms, hook_window, campaign_id) for moment in moments]
     optimized = [item for item in optimized if item and item["end"] > item["start"]]
     optimized.sort(key=lambda item: (float(item.get("hook_score", 0)), float(item.get("score", 0))), reverse=True)
 
@@ -227,7 +248,7 @@ def main():
 
     selected.sort(key=lambda item: (float(item["start"]), float(item["end"])))
     output = {
-        "version": "hook-optimizer-v3",
+        "version": "hook-optimizer-v4",
         "campaign_id": campaign_id,
         "campaign_requirements_used": bool(requirements),
         "moments": selected,
