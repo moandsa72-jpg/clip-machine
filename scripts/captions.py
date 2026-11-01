@@ -56,10 +56,9 @@ def create_ass(transcript_path, clip_start, clip_end, output_path):
     words.sort(key=lambda item: item["start"])
 
     if not words:
-        raise ValueError(
-            "No word timestamps found for this clip. "
-            "Check work/transcript.json."
-        )
+        # Trailer/gameplay footage may contain no spoken dialogue. Keep a valid
+        # empty ASS subtitle file so visual-only clips can still be rendered.
+        print("No spoken words detected; generating an empty subtitle track.")
 
     # Caption groups contain a maximum of 4 words.
     groups = []
