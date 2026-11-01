@@ -144,7 +144,7 @@ def build_crop_x_expression(face_data, start, end, source_width, crop_width):
     return f"if(lt(t,{first_time:.3f}),{first_x:.2f},{expression})".replace(",", "\\,")
 
 
-def make_clip(video_path, start, end, output_path, transcript_path, logo_path=None, face_data=None, hook_text=None):
+def make_clip(video_path, start, end, output_path, transcript_path, logo_path=None, face_data=None, hook_text=None, visual_only=False):
     duration = end - start
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -165,7 +165,7 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
     hook_filter = ""
     if hook_text and str(hook_text).strip():
         hook_text_path = output_path.with_suffix(".hook.txt")
-        wrapped_hook = textwrap.fill(" ".join(str(hook_text).split()), width=28)
+        wrapped_hook = textwrap.fill(" ".join(str(hook_text).upper().split()), width=21)
         hook_text_path.write_text(wrapped_hook, encoding="utf-8")
         hook_filter_path = str(hook_text_path.resolve())
         hook_filter_path = (
@@ -173,12 +173,26 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
             .replace(":", "\\:").replace("'", "\\'")
             .replace(",", "\\,").replace("[", "\\[").replace("]", "\\]")
         )
-        hook_filter = (
-            f"drawtext=textfile='{hook_filter_path}':fontcolor=white:"
-            "fontsize=76:font=DejaVu Sans:fontcolor=white:"
-            "borderw=4:bordercolor=black:box=1:boxcolor=black@0.68:"
-            "boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2:enable='lt(t,3)'"
-        )
+        if visual_only:
+            # COD visual-only edit: cinematic title panel in the upper third,
+            # with a gold accent and a small campaign label. Kept out of the
+            # center action area and shown only during the opening 3 seconds.
+            hook_filter = (
+                "drawbox=x=54:y=330:w=972:h=320:color=black@0.68:t=fill:enable='lt(t,3)',"
+                "drawbox=x=54:y=330:w=14:h=320:color=0xE6B323@1:t=fill:enable='lt(t,3)',"
+                "drawtext=text='MW4  /  SEASON 01':fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':"
+                "fontsize=32:fontcolor=0xF2C14E:x=100:y=370:enable='lt(t,3)',"
+                f"drawtext=textfile='{hook_filter_path}':fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':"
+                "fontsize=78:fontcolor=white:line_spacing=8:borderw=3:bordercolor=black:"
+                "x=100:y=430:alpha='if(lt(t,0.18),t/0.18,1)':enable='lt(t,3)'"
+            )
+        else:
+            hook_filter = (
+                f"drawtext=textfile='{hook_filter_path}':fontcolor=white:"
+                "fontsize=76:font=DejaVu Sans:fontcolor=white:"
+                "borderw=4:bordercolor=black:box=1:boxcolor=black@0.68:"
+                "boxborderw=24:x=(w-text_w)/2:y=(h-text_h)/2:enable='lt(t,3)'"
+            )
 
     width, height = get_video_dimensions(video_path)
     crop_width = min(width, int(height * 9 / 16))
@@ -308,7 +322,7 @@ def main():
             ).strip()
             hook_words = hook_text.split()
             hook_text = " ".join(hook_words[:5])
-        make_clip(video_path, start, end, output_path, transcript_path, logo_path, face_data, hook_text)
+        make_clip(video_path, start, end, output_path, transcript_path, logo_path, face_data, hook_text, bool(moment.get('visual_only')))
 
         source_text = " ".join(
             str(segment.get("text", "")).strip()
@@ -333,6 +347,7 @@ def main():
             "visual_scene_changes": moment.get("scene_changes", 0),
             "content_type": content_type.get("content_type", "general"),
             "framing_mode": "stable_dead_zone_capped_speed",
+            "hook_style": moment.get("hook_style", "standard"),
         }
         output_path.with_suffix(".json").write_text(
             json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
