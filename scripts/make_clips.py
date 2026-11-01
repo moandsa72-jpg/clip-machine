@@ -178,13 +178,13 @@ def make_clip(video_path, start, end, output_path, transcript_path, logo_path=No
             # with a gold accent and a small campaign label. Kept out of the
             # center action area and shown only during the opening 3 seconds.
             hook_filter = (
-                "drawbox=x=54:y=330:w=972:h=320:color=black@0.68:t=fill:enable='lt(t,3)',"
-                "drawbox=x=54:y=330:w=14:h=320:color=0xE6B323@1:t=fill:enable='lt(t,3)',"
+                "drawbox=x=54:y=150:w=972:h=300:color=black@0.68:t=fill:enable='lt(t,3)',"
+                "drawbox=x=54:y=150:w=14:h=300:color=0xE6B323@1:t=fill:enable='lt(t,3)',"
                 "drawtext=text='MW4  /  SEASON 01':fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':"
-                "fontsize=32:fontcolor=0xF2C14E:x=100:y=370:enable='lt(t,3)',"
+                "fontsize=32:fontcolor=0xF2C14E:x=100:y=190:enable='lt(t,3)',"
                 f"drawtext=textfile='{hook_filter_path}':fontfile='/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf':"
                 "fontsize=78:fontcolor=white:line_spacing=8:borderw=3:bordercolor=black:"
-                "x=100:y=430:alpha='if(lt(t,0.18),t/0.18,1)':enable='lt(t,3)'"
+                "x=100:y=245:alpha='if(lt(t,0.18),t/0.18,1)':enable='lt(t,3)'"
             )
         else:
             hook_filter = (
