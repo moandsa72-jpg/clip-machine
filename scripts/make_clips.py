@@ -329,6 +329,8 @@ def main():
             "edge_silence_trimmed": bool(moment.get("edge_silence_trimmed", False)),
             "moment_score": moment.get("score", 0),
             "fallback": bool(moment.get("fallback", False)),
+            "visual_only": bool(moment.get("visual_only", False)),
+            "visual_scene_changes": moment.get("scene_changes", 0),
             "content_type": content_type.get("content_type", "general"),
             "framing_mode": "stable_dead_zone_capped_speed",
         }
