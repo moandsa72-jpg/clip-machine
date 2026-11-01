@@ -170,13 +170,13 @@ jobs:
               if [ "$CAMPAIGN_ID" = "call_of_duty_mw4_s1" ]; then
                 COD_SOURCE="input/Call of Duty_ Modern Warfare 4 _ Season 1 Launch Trailer(480P).mp4"
                 test -s "$COD_SOURCE" || { echo "Required official Call of Duty trailer is missing: $COD_SOURCE"; exit 1; }
-                printf '%s\\n' "$COD_SOURCE" >> work/video_list
+                printf '%s\n' "$COD_SOURCE" >> work/video_list
               else
-                find input -maxdepth 1 -type f \\( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \\) -print >> work/video_list
+                find input -maxdepth 1 -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list
               fi
               ;;
             url) echo work/source_video.mp4 >> work/video_list ;;
-            drive_folder) find work/drive_videos -type f \\( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \\) -print >> work/video_list ;;
+            drive_folder) find work/drive_videos -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.m4v' \) -print >> work/video_list ;;
           esac
           sort -u -o work/video_list work/video_list
           test "$(wc -l < work/video_list)" -gt 0
