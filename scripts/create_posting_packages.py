@@ -128,6 +128,8 @@ def campaign_fit(metadata, campaign):
     if matches:
         score += min(30, 10 * len(matches))
         strengths.append("campaign focus matched: " + ", ".join(matches[:3]))
+    elif focus and metadata.get("visual_only"):
+        warnings.append("visual-only trailer clip: manually verify campaign focus against the footage")
     elif focus:
         score -= 12
         warnings.append("no configured campaign focus was detected in transcript text")
@@ -160,7 +162,12 @@ def campaign_fit(metadata, campaign):
 
     if requirements.get("opening_hook_required"):
         hook_score = metadata.get("hook_score")
-        if isinstance(hook_score, (int, float)) and hook_score >= 6:
+        if metadata.get("visual_only"):
+            if metadata.get("hook_text"):
+                strengths.append("editorial opening hook overlay generated; manually review its fit")
+            else:
+                warnings.append("visual-only clip needs a manually written opening hook")
+        elif isinstance(hook_score, (int, float)) and hook_score >= 6:
             score += 8
             strengths.append("opening hook requirement supported")
         else:
@@ -184,7 +191,9 @@ def posting_intelligence(metadata, duration, campaign, rules, caption):
     warnings = []
     hook_score = metadata.get("hook_score")
 
-    if isinstance(hook_score, (int, float)):
+    if metadata.get("visual_only"):
+        warnings.append("visual-only trailer candidate: manually inspect the first 3 seconds and campaign relevance")
+    elif isinstance(hook_score, (int, float)):
         if hook_score >= 8:
             score += 20
             strengths.append("strong hook")
@@ -217,7 +226,7 @@ def posting_intelligence(metadata, duration, campaign, rules, caption):
     else:
         warnings.append("limited transcript context")
 
-    if metadata.get("fallback"):
+    if metadata.get("fallback") and not metadata.get("visual_only"):
         score -= 15
         warnings.append("fallback clip requires review")
 
@@ -235,7 +244,11 @@ def posting_intelligence(metadata, duration, campaign, rules, caption):
     warnings.extend(fit_warnings)
 
     score = max(0, min(100, int(score)))
-    if score >= 80 and not any("not detected" in item.lower() for item in warnings):
+    if metadata.get("visual_only"):
+        # Visual-only candidates can never be auto-approved: route them to review.
+        score = max(score, 60)
+        decision = "review"
+    elif score >= 80 and not any("not detected" in item.lower() for item in warnings):
         decision = "ready"
     elif score >= 60:
         decision = "review"
