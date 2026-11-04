@@ -3,6 +3,11 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from .performance_memory import learned_adjustment, load_history
+except ImportError:
+    from performance_memory import learned_adjustment, load_history
+
 HOOK_WORDS = {
     "secret", "mistake", "truth", "crazy", "actually", "never", "always",
     "best", "worst", "why", "how", "important", "problem", "difference",
@@ -131,6 +136,18 @@ def candidates(segments, start, end, hook_window):
     return result
 
 
+
+def classify_hook_style(text):
+    lowered = str(text).lower()
+    if "?" in lowered or lowered.lstrip().startswith(("why ", "how ", "what ", "who ")):
+        return "question"
+    if any(term in lowered for term in ("secret", "truth", "revealed", "discovered", "never", "until")):
+        return "curiosity"
+    if any(term in lowered for term in ("you ", "your ", "watch ", "look ", "meet ")):
+        return "direct"
+    return "statement"
+
+
 def optimize(moment, segments, focus_terms, hook_window, campaign_id=None):
     original_start = float(moment.get("start", 0))
     original_end = float(moment.get("end", 0))
@@ -168,6 +185,7 @@ def optimize(moment, segments, focus_terms, hook_window, campaign_id=None):
     result["hook_source_text"] = hook_source[:240]
     result["hook_text"] = select_short_hook(hook_source, focus_terms)
     result["hook_word_count"] = len(words(result["hook_text"]))
+    result["hook_style"] = result.get("hook_style") or classify_hook_style(result["hook_text"])
     result["hook_optimized"] = bool(best and start != original_start and not fallback)
 
     # The COD trailer has no dialogue transcript, so use distinct editorial
@@ -215,13 +233,19 @@ def load_campaign(config_path, campaign_id):
 
 
 def main():
-    if len(sys.argv) not in (4, 6):
-        raise SystemExit("Usage: python scripts/optimize_moments.py <transcript.json> <moments.json> <output.json> [campaign_config.json campaign_id]")
+    if len(sys.argv) not in (4, 6, 7):
+        raise SystemExit("Usage: python scripts/optimize_moments.py <transcript.json> <moments.json> <output.json> [campaign_config.json campaign_id [performance_history.json]]")
 
     transcript_path, moments_path, output_path = map(Path, sys.argv[1:4])
     config_path = sys.argv[4] if len(sys.argv) == 6 else None
-    campaign_id = sys.argv[5] if len(sys.argv) == 6 else None
+    campaign_id = sys.argv[5] if len(sys.argv) >= 6 else None
+    history_path = Path(sys.argv[6]) if len(sys.argv) == 7 else Path("work/state/performance_history.json")
     requirements, focus_terms, hook_window = load_campaign(config_path, campaign_id)
+    try:
+        performance_history = load_history(history_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        print(f"WARNING: performance history unavailable ({exc}); using baseline scoring.")
+        performance_history = []
     segments = load_transcript(transcript_path)
     data = json.loads(moments_path.read_text(encoding="utf-8"))
     moments = data.get("moments", []) if isinstance(data, dict) else data
@@ -230,7 +254,11 @@ def main():
 
     optimized = [optimize(moment, segments, focus_terms, hook_window, campaign_id) for moment in moments]
     optimized = [item for item in optimized if item and item["end"] > item["start"]]
-    optimized.sort(key=lambda item: (float(item.get("hook_score", 0)), float(item.get("score", 0))), reverse=True)
+    for item in optimized:
+        learning = learned_adjustment(item, performance_history)
+        item["performance_learning"] = learning
+        item["adjusted_rank_score"] = round(float(item.get("score", 0)) + learning["adjustment"], 2)
+    optimized.sort(key=lambda item: (float(item.get("adjusted_rank_score", item.get("score", 0))), float(item.get("hook_score", 0))), reverse=True)
 
     selected = []
     for item in optimized:
@@ -248,7 +276,7 @@ def main():
 
     selected.sort(key=lambda item: (float(item["start"]), float(item["end"])))
     output = {
-        "version": "hook-optimizer-v4",
+        "version": "hook-optimizer-v5",
         "campaign_id": campaign_id,
         "campaign_requirements_used": bool(requirements),
         "moments": selected,
@@ -260,6 +288,8 @@ def main():
     print("Hook shape: 4–5 words")
     print(f"Campaign-aware focus: {bool(focus_terms)}")
     print(f"Hook deadline: {hook_window:.1f}s")
+    print(f"Performance history: {len(performance_history)} records from {history_path}")
+    print("Historical ranking is confidence-gated and capped at +/-4 points.")
 
 
 if __name__ == "__main__":
