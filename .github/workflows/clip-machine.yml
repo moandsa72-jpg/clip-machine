@@ -73,6 +73,9 @@ jobs:
           python -m py_compile scripts/*.py
           python scripts/doctor.py "$CAMPAIGN_ID"
 
+      - name: Run automated tests
+        run: python -m unittest discover -s tests -v
+
       - name: Prepare directories
         run: |
           mkdir -p input work work/state work/drive_videos output/clips output/rebel_audio_clips output/campaign_drafts output/posting_packages output/posting_dashboard output/campaign_opportunities output/posting_queue
