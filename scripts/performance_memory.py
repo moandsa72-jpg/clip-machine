@@ -41,7 +41,7 @@ def build_record(metadata, metrics, platform, posted_at=None):
         "recorded_at": datetime.now(timezone.utc).isoformat(),
         "posted_at": posted_at,
         "filename": str(metadata["filename"]),
-        "campaign_id": str(metadata.get("campaign_id") or metadata.get("content_type") or "unknown"),
+        "campaign_id": str(metadata.get("campaign_id") or "unknown"),
         "hook_text": str(metadata.get("hook_text", "")),
         "hook_style": str(metadata.get("hook_style", "unknown")),
         "content_type": str(metadata.get("content_type", "unknown")),
