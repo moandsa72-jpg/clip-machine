@@ -91,6 +91,63 @@ def summarize(history):
     return sorted(summaries, key=lambda row: (row["by"], -row["average_views"]))
 
 
+
+def learned_adjustment(metadata, history, minimum_samples=3, platform=None):
+    """Return a small, confidence-gated ranking adjustment from prior results."""
+    if not history:
+        return {"adjustment": 0.0, "samples": 0, "reason": "no performance history"}
+
+    keys = ("hook_style", "content_type", "framing_mode")
+    target = {key: str(metadata.get(key) or "unknown") for key in keys}
+    campaign_id = str(metadata.get("campaign_id") or "unknown")
+    platform_filter = str(platform).lower() if platform else None
+
+    eligible = []
+    for record in history:
+        if platform_filter and str(record.get("platform", "")).lower() != platform_filter:
+            continue
+        record_campaign = str(record.get("campaign_id") or "unknown")
+        if campaign_id != "unknown" and record_campaign not in (campaign_id, "unknown"):
+            continue
+        eligible.append(record)
+
+    matching = [
+        record for record in eligible
+        if all(str(record.get(key) or "unknown") == value for key, value in target.items())
+    ]
+    if len(matching) < minimum_samples or len(eligible) < minimum_samples:
+        return {
+            "adjustment": 0.0,
+            "samples": len(matching),
+            "reason": f"needs at least {minimum_samples} comparable posts",
+        }
+
+    def outcome(record):
+        # Engagement rate and watch time are kept separate from raw views,
+        # which vary heavily with account size and distribution.
+        engagement = max(0.0, float(record.get("engagement_rate", 0) or 0))
+        watch = max(0.0, float(record.get("avg_watch_seconds", 0) or 0))
+        return engagement * 100.0 + watch
+
+    baseline = sum(outcome(record) for record in eligible) / len(eligible)
+    observed = sum(outcome(record) for record in matching) / len(matching)
+    if baseline <= 0:
+        adjustment = 0.0
+    else:
+        relative_lift = (observed - baseline) / baseline
+        # Shrink small samples toward zero and cap the influence so history
+        # can refine, but never overpower, footage/campaign quality.
+        confidence = len(matching) / (len(matching) + 5.0)
+        adjustment = max(-4.0, min(4.0, relative_lift * 4.0 * confidence))
+
+    return {
+        "adjustment": round(adjustment, 2),
+        "samples": len(matching),
+        "baseline_samples": len(eligible),
+        "reason": "historical engagement and watch-time signal",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Free, local performance memory for Clip Machine.")
     parser.add_argument("--history", type=Path, default=DEFAULT_HISTORY)
