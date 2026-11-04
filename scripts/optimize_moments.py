@@ -179,6 +179,8 @@ def optimize(moment, segments, focus_terms, hook_window, campaign_id=None):
             hook_source = candidate_text
 
     result = dict(moment)
+    if campaign_id:
+        result["campaign_id"] = campaign_id
     result["start"] = round(start, 3)
     result["end"] = round(end, 3)
     result["hook_score"] = round(hook_score, 2)
