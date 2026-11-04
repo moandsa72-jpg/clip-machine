@@ -237,7 +237,7 @@ def main():
         raise SystemExit("Usage: python scripts/optimize_moments.py <transcript.json> <moments.json> <output.json> [campaign_config.json campaign_id [performance_history.json]]")
 
     transcript_path, moments_path, output_path = map(Path, sys.argv[1:4])
-    config_path = sys.argv[4] if len(sys.argv) == 6 else None
+    config_path = sys.argv[4] if len(sys.argv) >= 6 else None
     campaign_id = sys.argv[5] if len(sys.argv) >= 6 else None
     history_path = Path(sys.argv[6]) if len(sys.argv) == 7 else Path("work/state/performance_history.json")
     requirements, focus_terms, hook_window = load_campaign(config_path, campaign_id)
